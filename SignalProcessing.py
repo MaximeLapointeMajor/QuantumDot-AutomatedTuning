@@ -6,7 +6,7 @@ Created on Thu Jul 28 10:45:21 2016
 """
 
 import numpy as np
-#from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit
 from scipy import signal
 import sys
 sys.path.append('C:\Codes\pyHegel\pyHegel')
@@ -72,6 +72,22 @@ def AdjacentAveraging2D(data, nPoints=10):
         zz[u] = AdjacentAveraging(i, nPoints=nPoints)
     return zz
 
+def Cutoff(x, y):
+    """
+    
+    """
+    fs = (x.shape[0]-1)/(x.max()-x.min())
+    y2 = HighPassFilter(x, y, fs, order=5, cutoff=5.)
+    freq = FourierFrequency(x, x.shape[0])
+    tdf = FourierTransform(y2, y2.shape[0])
+    tdf = abs(tdf)
+    def lor(x, A, x0, gamma):
+        return A*(1/np.pi)*(gamma/2)/((x-x0)**2+(gamma/2)**2)+A*(1/np.pi)*(gamma/2)/((x+x0)**2+(gamma/2)**2)
+    p0 = ([10.,30.,5.])
+    ret = curve_fit(lor, freq, tdf, p0)
+    p0 = ret[0]
+    return abs(p0[1])-p0[2]
+
 def butter_highpass(cutoff, fs, order=5):
     """
     Generates the filter coefficients (numerator and denominator) of a butterworth digital filter design.
@@ -85,7 +101,7 @@ def butter_highpass(cutoff, fs, order=5):
     b, a = signal.butter(order, normal_cutoff, btype='high', analog=False)
     return b, a
 
-def HighPassFilter(data, cutoff, fs, order=5):
+def HighPassFilter(x, data, fs, order=5, cutoff=None):
     """
     Applies a high pass filter on the data using a butterworth digital filter design where the cutoff frequency is "the -3dB point".  
     
@@ -93,17 +109,19 @@ def HighPassFilter(data, cutoff, fs, order=5):
     "fs" is the sampling rate
     "order" is how steep the slope of the filter is
     """
+    if cutoff==None:
+        cutoff=Cutoff(x, data)
     b, a = butter_highpass(cutoff, fs, order=order)
     y = signal.filtfilt(b, a, data, padtype='even')
     return y
 
-def HighPassFilter2D(z, cutoff, fs, order=5):
+def HighPassFilter2D(x, z, fs, order=5, cutoff=None):
     """
     
     """
     zz = np.zeros_like(z)
     for u, i in enumerate(z):
-        zz[u] = HighPassFilter(i, cutoff, fs, order=order)
+        zz[u] = HighPassFilter(x, i, fs, order=order, cutoff=cutoff)
     return zz
 
 def FourierFrequency(x, nPoints):
@@ -219,9 +237,6 @@ def Transition2D(x, y, z, tresh_axis='x', tresh='all', sigma1=2.0, sigma2=2.0):
             for i in range (y.shape[0]):
                 tre[i] = Transition(z[i], tr=tr[i])
     return tre
-
-
-
 
 def AdjacentTransition(der,tt,tr,nPoints):
     """
