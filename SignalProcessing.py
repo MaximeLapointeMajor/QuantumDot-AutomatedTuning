@@ -65,7 +65,7 @@ def AdjacentAveraging(data, nPoints=10):
     
 def AdjacentAveraging2D(data, nPoints=10):
     """
-    
+    Applies 1 dimentional AdjacentAveraging on the given data along the 'x' axis.
     """
     zz = np.zeros_like(data)
     for u, i in enumerate(data):
@@ -74,7 +74,10 @@ def AdjacentAveraging2D(data, nPoints=10):
 
 def Cutoff(x, y):
     """
+    Cutoff calculates the cutoff frequency for the high pass filter in order to keep most of the desired signal but remove a maximum ammount of the DC and low frequency components.
     
+    The function starts by applying a high pass filter with a low cutoff frequency of 5 Hz, calculates the Fourier transform of the signal and fits it with 2 Lorentzians (symetrical in positive and negative frequencies) to extract the "main signal" and its width.
+    The cutoff frequency is calculated using the peak and gamma of the Lorentzian (x0-gamma)
     """
     fs = (x.shape[0]-1)/(x.max()-x.min())
     y2 = HighPassFilter(x, y, fs, order=5, cutoff=5.)
@@ -105,7 +108,7 @@ def HighPassFilter(x, data, fs, order=5, cutoff=None):
     """
     Applies a high pass filter on the data using a butterworth digital filter design where the cutoff frequency is "the -3dB point".  
     
-    "cutoff" is the "-3 dB point" of the filter
+    "cutoff" is the "-3 dB point" of the filter.  If cutoff is None, the cutoff frequency is calculated using the Cutoff function.
     "fs" is the sampling rate
     "order" is how steep the slope of the filter is
     """
@@ -117,7 +120,7 @@ def HighPassFilter(x, data, fs, order=5, cutoff=None):
 
 def HighPassFilter2D(x, z, fs, order=5, cutoff=None):
     """
-    
+    Applies 1 dimentional HighPassFilter function along the 'x' axis.
     """
     zz = np.zeros_like(z)
     for u, i in enumerate(z):
@@ -125,16 +128,22 @@ def HighPassFilter2D(x, z, fs, order=5, cutoff=None):
     return zz
 
 def FourierFrequency(x, nPoints):
+    """
+    Calculates the frequency array for the Fourier transform of nPoints given the x axis array.
+    """
     freq = np.fft.fftfreq(nPoints, d=(x.max()-x.min())/x.shape[0])
     return freq
 
 def FourierTransform(z, nPoints):
+    """
+    Calculates the Fourier transform of the given data.
+    """
     tdf = np.fft.fft(z, nPoints)
     return tdf
 
 def FourierTransform2D(x, z, nPoints):
     """
-    Calculates the 1D Fourier transform of a 2D diagram along the x axis.
+    Calculates the 1 dimentional Fourier transform along the x axis.
     """
     freq = FourierFrequency(x, nPoints)
     tdf = np.zeros_like(z, dtype=complex)
