@@ -3,13 +3,6 @@
 Created on Thu Jul 28 10:45:21 2016
 
 @author: Maxime
-
-19 Sept 2016: Modified the 1D transition and 2D transition functions using the "where" statement.
-19 Sept 2016: Added a Reshape function, which reduces the size of x and y into minimal arrays and reshapes the z array in the form of (Ny,Nx)
-19 Sept 2016: Modified the entry format for 2D functions.  Now x and y are the minimal array and z.shape=(Ny,Nx)
-19 Sept 2016: Removed the Plot2D function, which was no longer relevant with the new argument format on the 2D functions.
-26 Sept 2016: Added AdjacentTransition and Borders function which post-processes transitions to improve the data passed to Image Detection module.
-12 Nov 2016: Updated the Borders function to handle measurement arrays of any size.
 """
 
 import numpy as np
@@ -18,7 +11,6 @@ from scipy import signal
 import sys
 sys.path.append('C:\Codes\pyHegel\pyHegel')
 import derivative as dv
-import itertools as itt
 
 
 def Reshape(x, y, z):
@@ -272,34 +264,13 @@ def Borders(data,nPoints):
 
 
 
-def FullAnalysis(x,y,z,aa,s1,s2):
-    ph=Phase2D(x,y,z,aa)
-    der=Derivate2D(x,y,ph)
-    tt=Transition2D(x,y,der,tresh_axis='xy',tresh='background',sigma1=s1,sigma2=s2)
-    tt=Borders(tt,6)
-    return tt
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+#def FullAnalysis(x,y,z,aa,s1,s2):
+#    ph=Phase2D(x,y,z,aa)
+#    der=Derivate2D(x,y,ph)
+#    tt=Transition2D(x,y,der,tresh_axis='xy',tresh='background',sigma1=s1,sigma2=s2)
+#    tt=Borders(tt,6)
+#    return tt
+#
 #def Transition2D(x,y,z,tresh_axis='x',tresh='all',sigma1=2.0,sigma2=2.0):
 #    """
 #    Gives the value 0 to any point not detected as a transition and -1 to any point detected as one.
@@ -351,42 +322,6 @@ def FullAnalysis(x,y,z,aa,s1,s2):
 #                ##        temp = Transition(temp, tr=tr)
 #                ##        j = cp.copy(temp)
 #    return tre
-#
-#def FourierTransform2D(x,y,z,nPoints):
-#    """
-#    Calculates the Fourier transform of the data along the x axis.
-#    
-#    
-#    """
-#    N=z.shape[0]
-#    Nx=list(y).count(y[0])
-#    Ny=N/Nx
-#    temp=np.zeros(Nx)
-#    tdf=np.zeros(N,dtype=np.complex128)
-#    freq=np.zeros(N)
-#    for i in range (0,Ny):
-#        for j in range (0,Nx):
-#            temp[j]=z[(j+Nx*i)]
-#        xx=np.linspace(x.min(),x.max(),Nx)
-#        temp=AdjacentAveraging(temp,9)
-#        f,t=FourierTransform(xx,temp,nPoints)
-#        for j in range (0,Nx):
-#            tdf[(j+Nx*i)]=t[j]
-#            freq[(j+Nx*i)]=f[j]
-#    return freq,tdf
-#
-#def Rearrange(tdf,nPoints):
-#    N=tdf.shape[0]    
-#    temp=np.zeros(nPoints,dtype=np.complex128)
-#    ret=np.zeros(N,dtype=np.complex128)
-#    Ny=N/nPoints
-#    for i in range (0,Ny):
-#        for j in range (0,nPoints):
-#            temp[j]=tdf[(j+nPoints*i)]
-#        for j in range (0,nPoints):
-#            ret[(j+nPoints*i)]=temp[(j-((nPoints-1)/2))]
-#    return ret
-#
 #
 #def Hanning(data):
 #    """"
