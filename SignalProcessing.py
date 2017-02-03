@@ -11,7 +11,8 @@ from scipy import signal
 import sys
 sys.path.append('C:\Codes\pyHegel\pyHegel')
 import derivative as dv
-
+import peakdetect as pd
+import matplotlib.pyplot as plt
 
 def Reshape(x, y, z):
     """
@@ -281,11 +282,42 @@ def Borders(data,nPoints):
                 data[u][-(i+1)]=0
     return data
 
+def PeakSpacing(xdata, ydata, lookahead=20, delta=0, sigma=None, smooth=None, k=3, n=0):
+    """
+    This function calculates the distance between the peaks of a signal by first smoothing the signal and then using the peakdetect library.
+    The peakdetect library can be found at https://gist.github.com/sixtenbe/1178136
+    The smoothing is done using Dspline from the derivative library that can be found in pyHegel.
+    
+    sigma is the standard error of y (needed for smoothing)
+    s is the smoothing factor (chi^2 <=s).  The smaller s, the more the smoothing
+    k is the spline order.  Default is 3 for cubic.  (1 <= k <= 5)
+    n is the derivative.  Default is to fit the raw data, therefore no derivative is calculated.  (n <= k)
+    
+    The peak detection uses the peakdetect.peakdetect function.  It requires the x and y axis arrays.
+    lookahead is the distance to look ahead from a peak candidate to determine if it is an actual peak
+    delta specifies a minimum difference between a peak and the following points, before a peak may be considered a peak.  May be usefull for noisy signals
 
-
-
-
-
+    The function returns the max, min peaks and the peak spacing calculated using the maximums.
+    """
+    spl = dv.Dspline(xdata, ydata, sigma=sigma, s=smooth, k=k, n=n)
+    spl = spl[1]
+    peak = pd.peakdetect(spl, xdata, lookahead=lookahead, delta=delta)
+    pup = np.array(peak[0]).T
+    pdown = np.array(peak[1]).T
+    xspacing = np.zeros(pup[0].shape[0]-1)
+    spacing = np.zeros(pup[0].shape[0]-1)
+    for u, i in enumerate(xspacing):
+        xspacing[u] = (pup[0,u]+pup[0,u+1])/2.
+        spacing[u] = pup[0,u+1]-pup[0,u]
+    ss = np.array((xspacing, spacing))
+    plt.figure(100)
+    plt.plot(xdata,ydata,'-b')
+    plt.plot(xdata,spl,'-g')
+    plt.plot(pup[0],pup[1],'or')
+    plt.plot(pdown[0],pdown[1],'om')
+    plt.figure(101)
+    plt.plot(ss[0],ss[1],'o-b')
+    return pup, pdown, ss
 
 
 #def FullAnalysis(x,y,z,aa,s1,s2):
