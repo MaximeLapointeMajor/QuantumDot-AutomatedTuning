@@ -14,36 +14,49 @@ import derivative as dv
 import peakdetect as pd
 import matplotlib.pyplot as plt
 
-def Reshape(x, y, z):
+def Reshape(xdata, ydata, zdata):
     """
     Takes the arrays in the format output by the NanonisTramea and returns an array for the x and y axis and an array of arrays for z.
     """
-    N = z.shape[0]
-    Nx = list(y).count(y[0])
+    N = zdata.shape[0]
+    Nx = list(ydata).count(ydata[0])
     Ny = N/Nx
-    zz = np.copy(z)
+    zz = np.copy(zdata)
     zz.shape = (Ny,Nx)
-    xx = x[:Nx]
+    xx = xdata[:Nx]
     yy = np.zeros(Ny)
     for u in range(Ny):
-        yy[u] = y[Nx*u]
+        yy[u] = ydata[Nx*u]
     return xx,yy,zz
 
-def NormalisedSignal(data):
-    """
-    Returns the normalised data using a Hilbert transform.
-    """
-    N = float(data.shape[0])
-    env = signal.hilbert(data, N)
-    return data/np.abs(env)
-
-def Envelope(data):
+def _envelope(data):
     """
     Extracts the envelope of a signal by performing a Hilbert transform and taking the norm (np.abs()) of the Hilbert signal
     """
-    N = float(data.shape[0])
+    N = data.shape[0]
     hil = signal.hilbert(data, N)
     return np.abs(hil)
+
+def Sensitivity(xdata, ydata, fs):
+    """
+    Extracts the envelope of the derivative of ydata and applies a low pass filter to remove the noise in the envelope.
+    
+    This function is mostly useful to identify the range of operation of a SET in which it has the best sensitivity.
+    """
+    dd = dv.Dspline(xdata, ydata, s=.0001, k=3, n=1)
+    env = _envelope(dd[1])
+    env = PassFilter(xdata, env, order=5, btype='low', fs=fs, cutoff=10)
+    return env
+
+def Sensitivity2D(xdata, zdata):
+    """
+    Applies 1 dimentional Sensitivity function along the 'x' axis.
+    """
+    fs = (xdata.shape[0]-1)/(xdata.max()-xdata.min())
+    zz = np.zeros_like(zdata)
+    for u, i in enumerate(zdata):
+        zz[u] = Sensitivity(xdata, i, fs)
+    return zz
 
 def AdjacentAveraging(data, nPoints=10):
     """
@@ -64,24 +77,25 @@ def AdjacentAveraging(data, nPoints=10):
             avdata[u] = np.average(temp)
     return data-avdata
     
-def AdjacentAveraging2D(data, nPoints=10):
+def AdjacentAveraging2D(zdata, nPoints=10):
     """
     Applies 1 dimentional AdjacentAveraging on the given data along the 'x' axis.
     """
-    zz = np.zeros_like(data)
-    for u, i in enumerate(data):
+    zz = np.zeros_like(zdata)
+    for u, i in enumerate(zdata):
         zz[u] = AdjacentAveraging(i, nPoints=nPoints)
     return zz
 
-def Cutoff(x, y):
+def _cutoff(x, y, btype, fs=None):
     """
-    Cutoff calculates the cutoff frequency for the high pass filter in order to keep most of the desired signal but remove a maximum ammount of the DC and low frequency components.
+    _cutoff calculates the cutoff frequency for a low or high pass filter in order to keep most of the desired signal but remove a maximum ammount of the DC and low frequency components or high frequency components depending on the filter type.
     
     The function starts by applying a high pass filter with a low cutoff frequency of 5 Hz, calculates the Fourier transform of the signal and fits it with 2 Lorentzians (symetrical in positive and negative frequencies) to extract the "main signal" and its width.
-    The cutoff frequency is calculated using the peak and gamma of the Lorentzian (x0-gamma)
+    The cutoff frequency is calculated using the peak and gamma of the Lorentzian (x0-gamma) or (x0+gamma)
     """
-    fs = (x.shape[0]-1)/(x.max()-x.min())
-    y2 = HighPassFilter(x, y, fs, order=5, cutoff=5.)
+    if fs==None:
+        fs = (x.shape[0]-1)/(x.max()-x.min())
+    y2 = PassFilter(x, y, order=5, btype='high', fs=fs, cutoff=5.)
     freq = FourierFrequency(x, x.shape[0])
     tdf = FourierTransform(y2, y2.shape[0])
     tdf = abs(tdf)
@@ -90,9 +104,12 @@ def Cutoff(x, y):
     p0 = ([10.,30.,5.])
     ret = curve_fit(lor, freq, tdf, p0)
     p0 = ret[0]
-    return abs(p0[1])-p0[2]
+    if btype=='high':
+        return abs(p0[1])-p0[2]
+    if btype=='low':
+        return abs(p0[1])+p0[2]
 
-def butter_highpass(cutoff, fs, order=5):
+def _butter_pass(cutoff, fs, order=5, btype='high'):
     """
     Generates the filter coefficients (numerator and denominator) of a butterworth digital filter design.
     
@@ -102,54 +119,60 @@ def butter_highpass(cutoff, fs, order=5):
     """
     nyq = 0.5*fs
     normal_cutoff = cutoff/nyq
-    b, a = signal.butter(order, normal_cutoff, btype='high', analog=False)
+    b, a = signal.butter(order, normal_cutoff, btype=btype, analog=False)
     return b, a
 
-def HighPassFilter(x, data, fs, order=5, cutoff=None):
+def PassFilter(xdata, ydata, order=5, btype='high', fs=None, cutoff=None):
     """
-    Applies a high pass filter on the data using a butterworth digital filter design where the cutoff frequency is "the -3dB point".  
+    Applies a high or low pass filter on the data using a butterworth digital filter design where the cutoff frequency is "the -3dB point".  
+    
     
     "cutoff" is the "-3 dB point" of the filter.  If cutoff is None, the cutoff frequency is calculated using the Cutoff function.
     "fs" is the sampling rate
     "order" is how steep the slope of the filter is
+    "btype" is the filter type.  Can be 'high' or 'low'
     """
+    if fs==None:
+        fs = xdata.shape[0]/(xdata.max()-xdata.min())
     if cutoff==None:
-        cutoff=Cutoff(x, data)
-    b, a = butter_highpass(cutoff, fs, order=order)
-    y = signal.filtfilt(b, a, data, padtype='even')
+        cutoff = _cutoff(xdata, ydata, btype, fs)
+    b, a = _butter_pass(cutoff, fs, order=order, btype=btype)
+    y = signal.filtfilt(b, a, ydata, padtype='even')
     return y
 
-def HighPassFilter2D(x, z, fs, order=5, cutoff=None):
+def PassFilter2D(xdata, zdata, order=5, btype='high', fs=None, cutoff=None):
     """
-    Applies 1 dimentional HighPassFilter function along the 'x' axis.
+    Applies 1 dimentional PassFilter function along the 'x' axis.
     """
-    zz = np.zeros_like(z)
-    for u, i in enumerate(z):
-        zz[u] = HighPassFilter(x, i, fs, order=order, cutoff=cutoff)
+    if fs==None:
+        fs = xdata.shape[0]/(xdata.max()-xdata.min())
+    zz = np.zeros_like(zdata)
+    for u, i in enumerate(zdata):
+        zz[u] = PassFilter(xdata, i, order=order, btype=btype, fs=fs, cutoff=cutoff)
     return zz
 
-def FourierFrequency(x, nPoints):
+def FourierFrequency(xdata, nPoints):
     """
     Calculates the frequency array for the Fourier transform of nPoints given the x axis array.
     """
-    freq = np.fft.fftfreq(nPoints, d=(x.max()-x.min())/x.shape[0])
+    freq = np.fft.fftfreq(nPoints, d=(xdata.max()-xdata.min())/xdata.shape[0])
     return freq
 
-def FourierTransform(z, nPoints):
+def FourierTransform(data, nPoints):
     """
     Calculates the Fourier transform of the given data.
     """
-    tdf = np.fft.fft(z, nPoints)
+    tdf = np.fft.fft(data, nPoints)
     return tdf
 
-def FourierTransform2D(x, z, nPoints):
+def FourierTransform2D(xdata, zdata, nPoints):
     """
     Calculates the 1 dimentional Fourier transform along the x axis.
     """
-    freq = FourierFrequency(x, nPoints)
-    tdf = np.zeros_like(z, dtype=complex)
-    for u, i in enumerate(z):
-        tdf[u] = FourierTransform(x, i, nPoints)
+    freq = FourierFrequency(xdata, nPoints)
+    tdf = np.zeros_like(zdata, dtype=complex)
+    for u, i in enumerate(zdata):
+        tdf[u] = FourierTransform(xdata, i, nPoints)
     return freq, tdf
 
 def Phase(data):
@@ -176,37 +199,37 @@ def Phase2D(data):
         ph[u] = Phase(i)
     return ph
 
-def Derivate(x, y, k=3, sigma=None, s=None, n=1):
-    d = dv.Dspline(x, y, sigma=sigma, s=s, k=k, n=n)
+def Derivate(xdata, ydata, k=3, sigma=None, s=None, n=1):
+    d = dv.Dspline(xdata, ydata, sigma=sigma, s=s, k=k, n=n)
     return d[1]
 
-def Derivate2D(x, z, k=3, sigma=None, s=None, n=1):
+def Derivate2D(xdata, zdata, k=3, sigma=None, s=None, n=1):
     """
     Calculates the first derivative along the x axis using splines.
     
     k is the spline order (1 <= k <= 5)
     """
-    der = np.zeros_like(z)
-    for u, i in enumerate(z):
-        der[u] = Derivate(x, i, k=k, sigma=sigma, s=s, n=n)
+    der = np.zeros_like(zdata)
+    for u, i in enumerate(zdata):
+        der[u] = Derivate(xdata, i, k=k, sigma=sigma, s=s, n=n)
     return der
 
-def Threshold(z, sigma=2.0):
+def _threshold(data, sigma=2.0):
     """
     Given a standard deviation, sigma, extracts the treshold under which points are "out of noise".
     """
-    return np.mean(z)-sigma*np.sqrt(np.var(z))
+    return np.mean(data)-sigma*np.sqrt(np.var(data))
 
-def Transition(z, tr=None):
+def Transition(data, tr=None):
     """
     Given a set of data and a treshold, this function gives the value 0 to any point above treshold and -1 to any point below treshold.
     """
     if tr==None:
-        tr = Threshold(z)
-    temp = np.where(z<=tr, -1,0)
+        tr = _threshold(data)
+    temp = np.where(data<=tr, -1,0)
     return temp
 
-def Transition2D(x, y, z, tresh_axis='x', tresh='all', sigma1=2.0, sigma2=2.0):
+def Transition2D(xdata, ydata, zdata, tresh_axis='x', tresh='all', sigma1=2.0, sigma2=2.0):
     """
     Gives the value 0 to any point not detected as a transition and -1 to any point detected as one.
     
@@ -217,35 +240,35 @@ def Transition2D(x, y, z, tresh_axis='x', tresh='all', sigma1=2.0, sigma2=2.0):
     tresh: possible values are 'all' and 'background'.  If tresh=='all', all data points are considered for the calculation of both the average and standard deviation.  If tresh=='background', the function determines a first approximation of the transition points using sigma1 and removes those points from the calculation of the average and standard deviation, allowing to get statistics on the background without the transitions being considered. 
     
     """
-    tre = np.zeros_like(z)
+    tre = np.zeros_like(zdata)
     if tresh_axis=='xy':
         if tresh=='all':
-            tr = Threshold(np.ravel(z), sigma=sigma1)
+            tr = _threshold(np.ravel(zdata), sigma=sigma1)
         elif tresh=='background':
-            zz = np.ravel(z)
-            tr = Threshold(zz, sigma=sigma1)
+            zz = np.ravel(zdata)
+            tr = _threshold(zz, sigma=sigma1)
             zi = Transition(zz, tr=tr)
             index = np.where(zi==-1.0)
             zz = np.delete(zz, index)
-            tr = Threshold(zz, sigma=sigma2)
+            tr = _threshold(zz, sigma=sigma2)
         print tr
-        for u, i in enumerate(z):
+        for u, i in enumerate(zdata):
             tre[u] = Transition(i, tr=tr)
     elif tresh_axis=='x':
         if tresh=='all':
-            for u, i in enumerate(z):
-                tr = Threshold(i, sigma=sigma1)
+            for u, i in enumerate(zdata):
+                tr = _threshold(i, sigma=sigma1)
                 tre[u] = Transition(i, tr=tr)
         elif tresh=='background':
-            tr=np.zeros_like(y)
-            for u, i in enumerate(z):
-                tr[u] = Threshold(i, sigma=sigma1)
+            tr=np.zeros_like(ydata)
+            for u, i in enumerate(zdata):
+                tr[u] = _threshold(i, sigma=sigma1)
                 temp = Transition(i, tr=tr[u])
                 index = np.where(temp==-1.0)
                 temp = np.delete(i, index)
-                tr[u] = Threshold(temp, sigma=sigma2)
-            for i in range (y.shape[0]):
-                tre[i] = Transition(z[i], tr=tr[i])
+                tr[u] = _threshold(temp, sigma=sigma2)
+            for i in range (ydata.shape[0]):
+                tre[i] = Transition(zdata[i], tr=tr[i])
     return tre
 
 def AdjacentTransition(der,tt,tr,nPoints):
@@ -257,6 +280,9 @@ def AdjacentTransition(der,tt,tr,nPoints):
     "tr" is the new threshold below which a point will now be considered a transition point
     "nPoints" is how far away from the actual transition points you will look for new transition points.
     """
+    if nPoints < 1:
+        raise ValueError("nPoints must be '1' or above")
+    
     xSize=tt.shape[1]
     ySize=tt.shape[0]
     index=np.where(tt!=0)
@@ -272,8 +298,11 @@ def Borders(data,nPoints):
     """
     Zeros the nPoints closer to all the edges of the image.
     """
+    if nPoints < 1:
+        raise ValueError("nPoints must be '1' or above")
+    
     for u in range(data.shape[0]):
-        if u<nPoints:
+        if (u<nPoints) or (u>data.shape[0]-nPoints):
             for i in range(data.shape[1]):
                 data[u][i]=0
         else:
@@ -282,7 +311,7 @@ def Borders(data,nPoints):
                 data[u][-(i+1)]=0
     return data
 
-def PeakSpacing(xdata, ydata, lookahead=20, delta=0, sigma=None, smooth=None, k=3, n=0):
+def PeakSpacing(xdata, ydata, lookahead=20, delta=0, sigma=None, smooth=None, k=3, n=0, plot=True):
     """
     This function calculates the distance between the peaks of a signal by first smoothing the signal and then using the peakdetect library.
     The peakdetect library can be found at https://gist.github.com/sixtenbe/1178136
@@ -310,75 +339,25 @@ def PeakSpacing(xdata, ydata, lookahead=20, delta=0, sigma=None, smooth=None, k=
         xspacing[u] = (pup[0,u]+pup[0,u+1])/2.
         spacing[u] = pup[0,u+1]-pup[0,u]
     ss = np.array((xspacing, spacing))
-    plt.figure(100)
-    plt.plot(xdata,ydata,'-b')
-    plt.plot(xdata,spl,'-g')
-    plt.plot(pup[0],pup[1],'or')
-    plt.plot(pdown[0],pdown[1],'om')
-    plt.figure(101)
-    plt.plot(ss[0],ss[1],'o-b')
+    if plot==True:
+        plt.figure(100)
+        plt.plot(xdata,ydata,'-b')
+        plt.plot(xdata,spl,'-g')
+        plt.plot(pup[0],pup[1],'or')
+        plt.plot(pdown[0],pdown[1],'om')
+        plt.figure(101)
+        plt.plot(ss[0],ss[1],'o-b')
     return pup, pdown, ss
 
+def Analysis():
+    pass
 
-#def FullAnalysis(x,y,z,aa,s1,s2):
-#    ph=Phase2D(x,y,z,aa)
-#    der=Derivate2D(x,y,ph)
-#    tt=Transition2D(x,y,der,tresh_axis='xy',tresh='background',sigma1=s1,sigma2=s2)
-#    tt=Borders(tt,6)
-#    return tt
-#
-#def Transition2D(x,y,z,tresh_axis='x',tresh='all',sigma1=2.0,sigma2=2.0):
-#    """
-#    Gives the value 0 to any point not detected as a transition and -1 to any point detected as one.
-#    
-#    A data point is considered a transition point if it is more negative than a number of standard deviations to the average.
-#    
-#    tresh_axis: possible values are 'x' and 'xy'.  If tresh_axis=='x', the treshold is determined for every trace along the x axis.  If tresh_axis=='xy', a global treshold is determined for the entire 2D diagram
-#    
-##    tresh: possible values are 'all' and 'background'.  If tresh=='all', all data points are considered for the calculation of both the average and standard deviation.  If tresh=='background', the function determines a first approximation of the transition points using sigma1 and removes those points from the calculation of the average and standard deviation, allowing to get statistics on the background without the transitions being considered. 
-#    
-#    """
-#    tre=np.zeros(z.shape)
-#    if tresh_axis=='xy':
-#        if tresh=='all':
-#            tr=Threshold(np.ravel(z),sigma=sigma1)
-#        elif tresh=='background':
-#            zz=np.ravel(z)
-#            tr=Threshold(zz,sigma=sigma1)
-#            tre=Transition(zz,tr=tr)
-#            index=np.where(tre==-1.0)
-#            zz=np.delete(zz,index)
-#            tr=Threshold(zz,sigma=sigma2)
-#        print tr
-#        tre=Transition(z,tr=tr)
-#    elif tresh_axis=='x':
-#        temp=np.zeros(x.shape[0])
-#        if tresh=='all':
-#            for i in range (y.shape[0]):
-#                temp=np.copy(z[i])
-#                tr=Threshold(temp,sigma=sigma1)
-#                temp=Transition(temp,tr=tr)
-#                tre[i]=np.copy(temp)
-#        elif tresh=='background':
-#            tr=Threshold(np.ravel(z),sigma=sigma1)
-#            for i in range (y.shape[0]):
-#                temp=np.copy(z[i])
-#                temp=Transition(temp,tr=tr)
-#                tre[i]=np.copy(temp)
-#            zz=np.ravel(tre)
-#            index=np.where(zz==-1.0)
-#            zz=np.delete(zz,index)
-#            tr=Threshold(zz,sigma=sigma2)
-#            for i in range (y.shape[0]):
-#                temp=np.copy(z[i])
-#                temp=Transition(temp,tr=tr)
-#                tre[i]=np.copy(temp)
-#                ##  for i,j in zip(z,tre):
-#                ##        temp = np.copy(i)
-#                ##        temp = Transition(temp, tr=tr)
-#                ##        j = cp.copy(temp)
-#    return tre
-#
+
+
+
+
+
+
 #def Hanning(data):
 #    """"
 #    Applies a Hanning window on the data set given as an argument to the function.
@@ -405,13 +384,49 @@ def PeakSpacing(xdata, ydata, lookahead=20, delta=0, sigma=None, smooth=None, k=
 #        temp[u]=(0.54-0.46*np.cos(2*np.pi*(u/N)))*i
 #    return temp
 #
+#def _smoothfactor(ydata, nPoints=40):
+#    """
+#    Calculates the smoothing factor 's' required for interpolation in order to remove noise.
+#    
+#    (len(y)-sqrt(2*len(y)))*std**2 <= s <= (len(y)+sqrt(2*len(y)))*std**2
+#    where std is the standard error.
+#    """
+#    N=ydata.shape[0]
+#    vardata = _adjacentvariance(ydata, nPoints)
+#    vardata = np.mean(vardata[(int(.05*N)):(int(.9*N))])
+#    return N*vardata
 #
+#def _adjacentvariance(data,nPoints=40):
+#    """
+#    Calculates the variance of each point of an array with the nPoints on both sides of each point.
+#    """
+#    N = data.shape[0]
+#    vardata = np.zeros_like(data)
+#    for u, i in enumerate(data):
+#        if u<nPoints:
+#            vardata[u] = np.var(data[:(u*2+1)])
+#        elif ((N-u)<nPoints):
+#            vardata[u] = np.var(data[-(N*2-u*2-1):])
+#        else:
+#            temp = data[:(u+1+nPoints)]
+#            temp = temp[-(1+2*nPoints):]
+#            vardata[u] = np.var(temp)
+#    return vardata
 #
-
-
-
-
-
-
-
-
+#def Sensitivity(xdata, ydata):
+#    nPoints = int(ydata.shape[0])*.1
+#    dd = dv.Dspline(xdata, ydata, s=.0001, k=3, n=1)
+#    env = _envelope(dd[1])
+#    s = _smoothfactor(env, nPoints=nPoints)
+#    env = dv.Dspline(xdata, env, s=s, k=3, n=0)
+#    return env[1]
+#
+#def Sensitivity2D(xdata, data):
+#    """
+#    
+#    """
+#    zz = np.zeros_like(data)
+#    for u, i in enumerate(data):
+#        zz[u] = Sensitivity(xdata, i)
+#    return zz
+#
