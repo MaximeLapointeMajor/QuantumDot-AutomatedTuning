@@ -95,13 +95,12 @@ def _cutoff(x, y, btype, fs=None):
     """
     if fs==None:
         fs = (x.shape[0]-1)/(x.max()-x.min())
-    y2 = PassFilter(x, y, order=5, btype='high', fs=fs, cutoff=5.)
     freq = FourierFrequency(x, x.shape[0])
-    tdf = FourierTransform(y2, y2.shape[0])
+    tdf = FourierTransform(y, y.shape[0])
     tdf = abs(tdf)
-    def lor(x, A, x0, gamma):
-        return A*(1/np.pi)*(gamma/2)/((x-x0)**2+(gamma/2)**2)+A*(1/np.pi)*(gamma/2)/((x+x0)**2+(gamma/2)**2)
-    p0 = ([10.,30.,5.])
+    def lor(x, A0, x0, gamma0, A1, x1, gamma1):
+        return A0*(1/np.pi)*(gamma0/2)/((x-x0)**2+(gamma0/2)**2)+A0*(1/np.pi)*(gamma0/2)/((x+x0)**2+(gamma0/2)**2)+A1*(1/np.pi)*(gamma1/2)/((x+x1)**2+(gamma1/2)**2)
+    p0 = ([10., 30., 5., 100., 0., 5.])
     ret = curve_fit(lor, freq, tdf, p0)
     p0 = ret[0]
     if btype=='high':
@@ -229,7 +228,7 @@ def Transition(data, tr=None):
     temp = np.where(data<=tr, -1,0)
     return temp
 
-def Transition2D(xdata, ydata, zdata, tresh_axis='x', tresh='all', sigma1=2.0, sigma2=2.0):
+def Transition2D(xdata, ydata, zdata, tresh_axis='x', tresh='all', sigma1=.5, sigma2=1.0):
     """
     Gives the value 0 to any point not detected as a transition and -1 to any point detected as one.
     
@@ -318,7 +317,7 @@ def PeakSpacing(xdata, ydata, lookahead=20, delta=0, sigma=None, smooth=None, k=
     The smoothing is done using Dspline from the derivative library that can be found in pyHegel.
     
     sigma is the standard error of y (needed for smoothing)
-    s is the smoothing factor (chi^2 <=s).  The smaller s, the more the smoothing
+    s is the smoothing factor (chi^2 <=s).  The bigger s, the more the smoothing
     k is the spline order.  Default is 3 for cubic.  (1 <= k <= 5)
     n is the derivative.  Default is to fit the raw data, therefore no derivative is calculated.  (n <= k)
     
