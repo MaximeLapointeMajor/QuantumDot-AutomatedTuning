@@ -13,6 +13,7 @@ sys.path.append('C:\Codes\pyHegel\pyHegel')
 import derivative as dv
 import peakdetect as pd
 import matplotlib.pyplot as plt
+import lmfit as lmf
 
 def Reshape(xdata, ydata, zdata):
     """
@@ -86,27 +87,51 @@ def AdjacentAveraging2D(zdata, nPoints=10):
         zz[u] = AdjacentAveraging(i, nPoints=nPoints)
     return zz
 
-def _cutoff(x, y, btype, fs=None):
+def _cutoff(xdata, ydata, btype, fs):
     """
     _cutoff calculates the cutoff frequency for a low or high pass filter in order to keep most of the desired signal but remove a maximum ammount of the DC and low frequency components or high frequency components depending on the filter type.
     
-    The function starts by applying a high pass filter with a low cutoff frequency of 5 Hz, calculates the Fourier transform of the signal and fits it with 2 Lorentzians (symetrical in positive and negative frequencies) to extract the "main signal" and its width.
-    The cutoff frequency is calculated using the peak and gamma of the Lorentzian (x0-gamma) or (x0+gamma)
+    The function calculates the Fourier transform of the signal and fits it with 3 Lorentzians (2 symetrical in positive and negative frequencies + 1 centered at 0) to extract the "main signal" and its width.
+    The cutoff frequency is calculated using the peak and gamma of the double-Lorentzians.  (x0-gamma) or (x0+gamma) depending on if you are applying a high or low pass filter.
     """
-    if fs==None:
-        fs = (x.shape[0]-1)/(x.max()-x.min())
-    freq = FourierFrequency(x, x.shape[0])
-    tdf = FourierTransform(y, y.shape[0])
-    tdf = abs(tdf)
-    def lor(x, A0, x0, gamma0, A1, x1, gamma1):
-        return A0*(1/np.pi)*(gamma0/2)/((x-x0)**2+(gamma0/2)**2)+A0*(1/np.pi)*(gamma0/2)/((x+x0)**2+(gamma0/2)**2)+A1*(1/np.pi)*(gamma1/2)/((x+x1)**2+(gamma1/2)**2)
-    p0 = ([10., 30., 5., 100., 0., 5.])
-    ret = curve_fit(lor, freq, tdf, p0)
-    p0 = ret[0]
-    if btype=='high':
-        return abs(p0[1])-p0[2]
-    if btype=='low':
-        return abs(p0[1])+p0[2]
+    try:
+        freq = FourierFrequency(xdata, xdata.shape[0])
+        index = np.argsort(freq)
+        tdf = FourierTransform(ydata, ydata.shape[0])
+        tdf = abs(tdf)
+        def lor(x, A0, x0, gamma0, A1, x1, gamma1):
+            return A0*(1/np.pi)*(gamma0/2)/((x-x0)**2+(gamma0/2)**2)+A0*(1/np.pi)*(gamma0/2)/((x+x0)**2+(gamma0/2)**2)+A1*(1/np.pi)*(gamma1/2)/((x+x1)**2+(gamma1/2)**2)
+        p0 = ([10., 22., 1., 100., 0., 1.])
+        ret = curve_fit(lor, freq[index], tdf[index], p0=p0)
+        p0 = ret[0]
+        if btype=='high':
+            if (abs(p0[1])-abs(p0[2])) < abs(p0[5]):
+                gamma1 = abs(p0[5])
+                raise Exception("Cutoff frequency could not be extracted properly.  Further processing will be performed.")
+    except Exception:
+        try:
+            plt.figure()
+            plt.plot(freq[index], tdf[index], 'b-')
+            plt.plot(freq[index], lor(freq[index], p0[0], p0[1], p0[2], p0[3], p0[4], p0[5]), 'c-')
+            yy = PassFilter(xdata, ydata, fs=fs, order=5, btype=btype, cutoff=5*gamma1)
+            tdf = FourierTransform(yy, yy.shape[0])
+            tdf = abs(tdf)
+            def lor2(x, A0, x0, gamma0):
+                return A0*(1/np.pi)*(gamma0/2)/((x-x0)**2+(gamma0/2)**2)+A0*(1/np.pi)*(gamma0/2)/((x+x0)**2+(gamma0/2)**2)
+            p0 = ([20., 30., 1.])
+            ret = curve_fit(lor2, freq[index], tdf[index], p0=p0)
+            p0 = ret[0]
+            plt.plot(freq[index], tdf[index], 'g-')
+            plt.plot(freq[index], lor2(freq[index], p0[0], p0[1], p0[2]), 'r-')
+            if (abs(p0[1])-abs(p0[2])) < gamma1:
+                raise Exception("Cutoff frequency could not be extracted properly.")
+        except Exception:
+            pass
+    finally:
+        if btype=='high':
+            return (abs(p0[1])-abs(p0[2]))
+        elif btype=='low':
+            return abs((p0[1])+abs(p0[2]))
 
 def _butter_pass(cutoff, fs, order=5, btype='high'):
     """
@@ -121,7 +146,7 @@ def _butter_pass(cutoff, fs, order=5, btype='high'):
     b, a = signal.butter(order, normal_cutoff, btype=btype, analog=False)
     return b, a
 
-def PassFilter(xdata, ydata, order=5, btype='high', fs=None, cutoff=None):
+def PassFilter(xdata, ydata, fs, order=5, btype='high', cutoff=None):
     """
     Applies a high or low pass filter on the data using a butterworth digital filter design where the cutoff frequency is "the -3dB point".  
     
@@ -131,23 +156,21 @@ def PassFilter(xdata, ydata, order=5, btype='high', fs=None, cutoff=None):
     "order" is how steep the slope of the filter is
     "btype" is the filter type.  Can be 'high' or 'low'
     """
-    if fs==None:
-        fs = xdata.shape[0]/(xdata.max()-xdata.min())
     if cutoff==None:
         cutoff = _cutoff(xdata, ydata, btype, fs)
     b, a = _butter_pass(cutoff, fs, order=order, btype=btype)
     y = signal.filtfilt(b, a, ydata, padtype='even')
     return y
 
-def PassFilter2D(xdata, zdata, order=5, btype='high', fs=None, cutoff=None):
+def PassFilter2D(xdata, zdata, order=5, btype='high', cutoff=None):
     """
     Applies 1 dimentional PassFilter function along the 'x' axis.
     """
-    if fs==None:
-        fs = xdata.shape[0]/(xdata.max()-xdata.min())
+    fs = (xdata.shape[0]-1)/abs(xdata.max()-xdata.min())
     zz = np.zeros_like(zdata)
     for u, i in enumerate(zdata):
-        zz[u] = PassFilter(xdata, i, order=order, btype=btype, fs=fs, cutoff=cutoff)
+        print u
+        zz[u] = PassFilter(xdata, i, fs=fs, order=order, btype=btype, cutoff=cutoff)
     return zz
 
 def FourierFrequency(xdata, nPoints):
@@ -250,7 +273,7 @@ def Transition2D(xdata, ydata, zdata, tresh_axis='x', tresh='all', sigma1=.5, si
             index = np.where(zi==-1.0)
             zz = np.delete(zz, index)
             tr = _threshold(zz, sigma=sigma2)
-        print tr
+        print "Threshold: %s"%tr
         for u, i in enumerate(zdata):
             tre[u] = Transition(i, tr=tr)
     elif tresh_axis=='x':
@@ -348,41 +371,45 @@ def PeakSpacing(xdata, ydata, lookahead=20, delta=0, sigma=None, smooth=None, k=
         plt.plot(ss[0],ss[1],'o-b')
     return pup, pdown, ss
 
-def Analysis():
-    pass
+def Analysis(xdata, ydata, zdata):
+    print "Applying high pass filters"
+    zz = PassFilter2D(xdata, zdata, order=5, btype='high')
+    print "Calculating the Hilbert transform and extrating the phase of the signal"
+    zz = Phase2D(zz)
+    print "Calculatin derivative"
+    zz = Derivate2D(xdata, zz)
+    print "Calculating thresholds and transitions"
+    zz = Transition2D(xdata, ydata, zz, tresh_axis='xy', tresh='background', sigma1=.6, sigma2=1.)
+    return zz
 
 
 
+def Hanning(data):
+    """"
+    Applies a Hanning window on the data set given as an argument to the function.
+    
+    w(n)=0.5*(1-cos(2 pi*n/(N-1)))
+    """
+    N=float(data.shape[0])
+    temp=np.zeros(data.shape[0])
+    for u, i in enumerate(data):
+        temp[u]=(0.5-0.5*np.cos(2*np.pi*(u/N)))*i
+    return temp
 
+def Hamming(data):
+    """"
+    Applies a Hamming window on the data set given as an argument to the function.
+    
+    The Hamming window is similar to the Hann window except the constants (0.5) are replaced by a=0.54 and b=1-a
+    
+    w(n)=0.54-0.46*cos(2 pi*n/(N-1))
+    """
+    N=float(data.shape[0])
+    temp=np.zeros(data.shape[0])
+    for u, i in enumerate(data):
+        temp[u]=(0.54-0.46*np.cos(2*np.pi*(u/N)))*i
+    return temp
 
-
-
-#def Hanning(data):
-#    """"
-#    Applies a Hanning window on the data set given as an argument to the function.
-#    
-#    w(n)=0.5*(1-cos(2 pi*n/(N-1)))
-#    """
-#    N=float(data.shape[0])
-#    temp=np.zeros(N)
-#    for u, i in enumerate(data):
-#        temp[u]=(0.5-0.5*np.cos(2*np.pi*(u/N)))*i
-#    return temp
-#
-#def Hamming(data):
-#    """"
-#    Applies a Hamming window on the data set given as an argument to the function.
-#    
-#    The Hamming window is similar to the Hann window except the constants (0.5) are replaced by a=0.54 and b=1-a
-#    
-#    w(n)=0.54-0.46*cos(2 pi*n/(N-1))
-#    """
-#    N=float(data.shape[0])
-#    temp=np.zeros(N)
-#    for u, i in enumerate(data):
-#        temp[u]=(0.54-0.46*np.cos(2*np.pi*(u/N)))*i
-#    return temp
-#
 #def _smoothfactor(ydata, nPoints=40):
 #    """
 #    Calculates the smoothing factor 's' required for interpolation in order to remove noise.
