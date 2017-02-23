@@ -99,39 +99,30 @@ def _cutoff(xdata, ydata, btype, fs):
         index = np.argsort(freq)
         tdf = FourierTransform(ydata, ydata.shape[0])
         tdf = abs(tdf)
-        def lor(x, A0, x0, gamma0, A1, x1, gamma1):
+        def lor(x, A0, x0, gamma0, A1, x1, gamma1, delta):
             return A0*(1/np.pi)*(gamma0/2)/((x-x0)**2+(gamma0/2)**2)+A0*(1/np.pi)*(gamma0/2)/((x+x0)**2+(gamma0/2)**2)+A1*(1/np.pi)*(gamma1/2)/((x+x1)**2+(gamma1/2)**2)
-        p0 = ([10., 22., 1., 100., 0., 1.])
-        ret = curve_fit(lor, freq[index], tdf[index], p0=p0)
-        p0 = ret[0]
+        lmod = lmf.Model(lor)           
+        lmod.make_params()
+        lmod.set_param_hint('A0', value=max(tdf)/2., min=0.)
+        lmod.set_param_hint('A1', value=max(tdf), min=0.)
+        lmod.set_param_hint('gamma0', value=1., min=0., expr='-delta-3*gamma1+x0')
+        lmod.set_param_hint('gamma1', value=1., min=0.)
+        lmod.set_param_hint('x0', value=25., min=0.)
+        lmod.set_param_hint('x1', value=0.)
+        lmod.set_param_hint('delta', value=10., min=0.)
+        result = lmod.fit(tdf[index], x=freq[index])
         if btype=='high':
-            if (abs(p0[1])-abs(p0[2])) < abs(p0[5]):
-                gamma1 = abs(p0[5])
-                raise Exception("Cutoff frequency could not be extracted properly.  Further processing will be performed.")
-    except Exception:
-        try:
-            plt.figure()
-            plt.plot(freq[index], tdf[index], 'b-')
-            plt.plot(freq[index], lor(freq[index], p0[0], p0[1], p0[2], p0[3], p0[4], p0[5]), 'c-')
-            yy = PassFilter(xdata, ydata, fs=fs, order=5, btype=btype, cutoff=5*gamma1)
-            tdf = FourierTransform(yy, yy.shape[0])
-            tdf = abs(tdf)
-            def lor2(x, A0, x0, gamma0):
-                return A0*(1/np.pi)*(gamma0/2)/((x-x0)**2+(gamma0/2)**2)+A0*(1/np.pi)*(gamma0/2)/((x+x0)**2+(gamma0/2)**2)
-            p0 = ([20., 30., 1.])
-            ret = curve_fit(lor2, freq[index], tdf[index], p0=p0)
-            p0 = ret[0]
-            plt.plot(freq[index], tdf[index], 'g-')
-            plt.plot(freq[index], lor2(freq[index], p0[0], p0[1], p0[2]), 'r-')
-            if (abs(p0[1])-abs(p0[2])) < gamma1:
-                raise Exception("Cutoff frequency could not be extracted properly.")
-        except Exception:
-            pass
-    finally:
-        if btype=='high':
-            return (abs(p0[1])-abs(p0[2]))
+            print result.values.get('x0')-result.values.get('gamma0')
+            if result.values.get('x0')-1.5*result.values.get('gamma0') > 3*result.values.get('gamma1')*3:
+                return result.values.get('x0')-1.5*result.values.get('gamma0')
+            else:
+                return result.values.get('x0')-result.values.get('gamma0')
         elif btype=='low':
-            return abs((p0[1])+abs(p0[2]))
+            return result.values.get('x0')+result.values.get('gamma0')
+    except Exception:
+        pass
+    finally:
+        pass
 
 def _butter_pass(cutoff, fs, order=5, btype='high'):
     """
@@ -169,7 +160,7 @@ def PassFilter2D(xdata, zdata, order=5, btype='high', cutoff=None):
     fs = (xdata.shape[0]-1)/abs(xdata.max()-xdata.min())
     zz = np.zeros_like(zdata)
     for u, i in enumerate(zdata):
-        print u
+#        print u
         zz[u] = PassFilter(xdata, i, fs=fs, order=order, btype=btype, cutoff=cutoff)
     return zz
 
@@ -273,7 +264,7 @@ def Transition2D(xdata, ydata, zdata, tresh_axis='x', tresh='all', sigma1=.5, si
             index = np.where(zi==-1.0)
             zz = np.delete(zz, index)
             tr = _threshold(zz, sigma=sigma2)
-        print "Threshold: %s"%tr
+#        print "Threshold: %s"%tr
         for u, i in enumerate(zdata):
             tre[u] = Transition(i, tr=tr)
     elif tresh_axis=='x':
@@ -324,13 +315,9 @@ def Borders(data,nPoints):
         raise ValueError("nPoints must be '1' or above")
     
     for u in range(data.shape[0]):
-        if (u<nPoints) or (u>data.shape[0]-nPoints):
-            for i in range(data.shape[1]):
-                data[u][i]=0
-        else:
-            for i in range(nPoints):
-                data[u][i]=0
-                data[u][-(i+1)]=0
+        for i in range(nPoints):
+            data[u][i]=0
+            data[u][-(i+1)]=0
     return data
 
 def PeakSpacing(xdata, ydata, lookahead=20, delta=0, sigma=None, smooth=None, k=3, n=0, plot=True):
@@ -380,6 +367,7 @@ def Analysis(xdata, ydata, zdata):
     zz = Derivate2D(xdata, zz)
     print "Calculating thresholds and transitions"
     zz = Transition2D(xdata, ydata, zz, tresh_axis='xy', tresh='background', sigma1=.6, sigma2=1.)
+    zz = Borders(zz, 5)
     return zz
 
 
