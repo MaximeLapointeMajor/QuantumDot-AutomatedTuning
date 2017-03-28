@@ -11,13 +11,13 @@ import numpy as np
 #import matplotlib.pyplot as plt
 #import matplotlib.cm as cm
 from itertools import product
-
+from numpy.linalg import eig
 
 
 
 #from scipy.optimize import curve_fit
 
-class Segment:
+class segment:
     """
     Segment obtained from the Hough Transform of an ensemble of points.
     
@@ -56,6 +56,57 @@ class Segment:
         
         self.theta_x = AngleLineXAxis(self.a)
 
+class Cluster:
+    """
+    """
+    def __init__(self, cluster):
+        
+        p0, u, v, pt = u_v_(cluster)
+        if v[0]<0.:
+            v = -v
+#        if u[1]<0.:
+#            u = -u
+        
+        self.pt = pt
+        self.pt_x = pt[1]
+        self.pt_y = pt[0]
+        self.cluster = cluster
+        self.p0 = p0
+        self.u = u
+        self.v = v
+        self.p0_y = p0[0]
+        self.p0_x = p0[1]
+        self.u_y = u[0]
+        self.u_x = u[1]
+        self.v_y = v[0]
+        self.v_x = v[1]
+        
+        rho = _rho(v, p0)
+        theta_y = _theta_y(v)
+        
+        self.rho = rho
+#        self.theta_x = 90.-theta_y
+        self.theta_y = theta_y
+        
+        sigma_rho_sq, sigma_theta_sq, sigma_rho_theta = Sigmas(cluster, p0, u, v)
+        
+        self.sigma_mp_sq = _sigma_mp_square(cluster, p0, u)
+        self.sigma_bp_sq = _sigma_bp_square(cluster.shape[0])
+        self.sigma_rho_sq = sigma_rho_sq
+        self.sigma_theta_sq = sigma_theta_sq
+        self.sigma_rho_theta = sigma_rho_theta
+        
+        
+        
+        
+        
+        
+
+
+
+
+
+
 
 
 def DistancePointLine(x, y, a, b):
@@ -85,13 +136,30 @@ def Slope(angle):
     """
     return np.tan(angle*np.pi/180.)
 
-def Cluster(image, gap_size=0, min_cluster_size=4):
+
+
+
+
+
+def Linkage(image, gap_size=0, min_cluster_size=4):
+    """
+    Returns a list of clusters each containing a minimum number of points separated by at most a specified number of pixels
+    
+    The last cluster is the ensemble of points that belong to no cluster. (index[-1])
+    Each cluster is an array of coordinates of the form [x, y], assuming that the input image is an array of arrays with the first index corresponding to the x axis.
+    -------
+    image           \t must be a binary image.  Points to be clustered must have a value different than 0.
+    gap_size        \t is the maximum number of pixels separating points that belong to a cluster.  Must be an integer
+    min_cluster_size\t is the minimum ammount of points that a group of points must contain in order to be considered as a cluster.  If the group of points does not meet the requirement, they are placed in the left-over category in any order.
+
+
+    """
     cc = []
     leftover = []
     img = image.copy()
     index = np.nonzero(img)
     while (index[0].shape[0]!=0):
-        group = _linkage(img, gap_size=gap_size, first_call=True)
+        group = _group(img, ref=list([index[0][0], index[1][0]]), gap_size=gap_size)
         for u in group:
             img[u[0], u[1]] = 0.
         if group.shape[0] >= min_cluster_size:
@@ -100,233 +168,130 @@ def Cluster(image, gap_size=0, min_cluster_size=4):
             for u in group:
                 leftover.append(u)
         index = np.nonzero(img)
-    cc.append(leftover)
+    cc.append(np.array(leftover))
     return np.array(cc)
 
+def _group(img, ref, gap_size=0):
+    """
+    
+    """
+    index = 0
+    mylist = []
+    mylist.append(list(ref))
+    image = img.copy()
+    image[ref[0],ref[1]] = 0.
+    while (np.array(mylist).shape[0]>index):
+        ret = _next(image, mylist[index], gap_size=gap_size)
+        if ret!=None:
+            mylist.append(ret)
+            image[ret[0], ret[1]] = 0.
+        else:
+            index=index+1
+    return np.array(mylist)
 
-def _linkage(img, gap_size=0, mylist=None, first_call=False):
-    if mylist==None:
-        mylist = []
-        p0 = np.array(np.where(img!=0.)).T
-        mylist.append(list(p0[0]))
-    for i in product((np.arange(mylist[-1][0]-gap_size-1, mylist[-1][0]+gap_size+2, 1))%img.shape[0], (np.arange(mylist[-1][1]-gap_size-1, mylist[-1][1]+gap_size+2, 1))%img.shape[1]):
-        if img[i[0], i[1]]!=0. and list(i) not in mylist:
-            mylist.append(list(i))
-            mylist = _linkage(img, gap_size=gap_size, mylist=mylist, first_call=False)
-    if first_call==True:
-        mylist=np.array(mylist)
-    return mylist
+def _next(img, ref, gap_size=0):
+    """
+    
+    """
+    ret = None
+    for i in product((np.arange(ref[0]-gap_size-1, ref[0]+gap_size+2, 1))%img.shape[0], (np.arange(ref[1]-gap_size-1, ref[1]+gap_size+2, 1))%img.shape[1]):
+        if img[i[0], i[1]]!=0.:
+            ret = list(i)
+            break
+    return ret
 
+def u_v_(cluster):
+    """
+    Takes a cluster of coordinates and calculates the euclidian average and direction vector
+    
+    returns p0, u, v
+    -------
+    p0 is the "middle" of the cluster.
+    u is the directional unitary vector of the cluster.
+    v is the unitary vector perpendicular to u.
+    
+    p0, u, v are all of the form (y,x) in order to be consistent with the usual matrix definition where the first indice is the y axis.
+    """
+    p0x = np.mean(cluster.T[1])
+    p0y = np.mean(cluster.T[0])
+    eigmax = -1.0e100
+    for u in cluster:
+        x = u[1]-p0x
+        y = u[0]-p0y
+        xy = x*y
+        mm = np.array([[x*x, xy],[xy, y*y]])
+        eigvalue, eigvector = eig(mm)
+        for i, k in enumerate(eigvalue):
+            if k>eigmax:
+                pt = u.copy()
+                eigmax = k
+                vecmin = eigvector[i-1]
+                vecmax = eigvector[i]
+    ### The eig() function of numpy currently has a problem with associating the proper eigenvector with its eigenvalue.
+    ### The eigenvectors are also inverted ([y,x] instead of [x,y]), which in our case fits our need, but could cause problems to a user.
+    u = vecmin[np.array([0,1])].copy()
+    v = vecmax[np.array([0,1])].copy()
+    return np.array([p0y, p0x]), u, v, pt
 
+def _rho(v, p0):
+    """
+    
+    """
+    return v[0]*p0[0]+v[1]*p0[1]
 
+def _theta_y(v):
+    """
+    
+    """
+    return np.arccos(v[1])
 
-#def ExtDroite(t,p):
-#    a=float(p[-1,1]-p[-2,1])/float(p[-2,0]-p[-2,0])
-#    angle=AngleLineXAxis(a)
-#    adown=Slope(angle+10)
-#    aup=Slope(angle-10)
-#    bdown=p[-1,1]-adown*p[-1,0]
-#    bup=p[-1,1]-aup*p[-1,0]
-#    index=np.where(t!=0)
-#    index=np.array(index).T
-#    tt=np.zeros(t.shape)
-#    for u in index:
-#        d=np.sqrt(float(p[-1,1]-u[0])+(p[-1,0]-u[1]))
-#        if (d<20) or (d<150) and (u[0]<aup*u[1]+bup) and (u[0]>adown*u[1]+bdown):
-#            tt[u[0],u[1]]=1
-#    pp=transform.probabilistic_hough_line(tt,threshold=20,line_length=80,line_gap=20)
-#    if pp==[]:
-#        pp=transform.probabilistic_hough_line(tt,threshold=15,line_length=80,line_gap=20)
-#    if pp==[]:
-#        pp=transform.probabilistic_hough_line(tt,threshold=12,line_length=50,line_gap=15)
-#    if pp==[]:
-#        return p
-#    else:
-#        pp=np.array(pp)
-#        for u, i in enumerate(pp):
-#            pass
-#
-#def Extension(t,p):
-#    pp=list(p)
-#    index=np.where(t!=0)
-#    index=np.array(index).T
-#    tt=np.zeros(t.shape)
-#    angle=AngleLineXAxis((p[1,1]-p[0,1])/(p[1,0]-p[0,0]))
-#    aup=Slope(angle+10)
-#    adown=Slope(angle-10)
-#    bup=-aup*p[0,0]+p[0,1]
-#    bdown=-adown*p[0,0]+p[0,1]
-#    pp=list()
-#    for u in index:
-#        d=np.sqrt((p[0,0]-u[1])**2+(p[0,1]-u[0])*2)
-#        if (d<100) and (u[0]<aup*u[1]+bup) and (u[0]>adown*u[1]+bdown):
-#            tt[u[1],u[0]]=1
-#    tt=transform.probabilistic_hough_line(tt,threshold=15,line_length=40,line_gap=15)
-#    if tt!=[]:
-#        tt=np.array(tt)
-#        t0=tt[0,0]
-#        t1=tt[0,1]
-#        tmax=max(t0[0],t1[0])
-#        if tmax==t0[0]:
-#            pp.append(t1)
-#            pp.append(t0)
-#            pp.append(p)
-#        else:
-#            pp.append(t0)
-#            pp.append(t1)
-#            pp.append(p)
-##    tt=np.zeros(t.shape)
-##    angle=AngleDroiteAxeX((p[-1,1]-p[-2,1])/(p[-1,0]-p[-2,0]))
-##    bup=-aup*p[-1,0]+p[-1,1]
-##    bdown=-adown*p[-1,0]+p[-1,0]
-##    for u in index:
-##        d=sqrt((p[-1,0]-u[1])**2+(p[-1,1]-u[0])*2)
-##        if (d<100) and (u[0]<aup*u[1]+bup) and (u[0]>adown*u[1]+bdown):
-##            tt[u[1],u[0]]=1
-##    tt=transform.probabilistic_hough_line(tt,threshold=15,line_length=40,line_gap=15)
-##    if yy!=[]:
-##        pass
-##    else:
-##        #ajouter le point à gauche + moyenner le point de droite
-#    return pp
-#
-#def ParamTransition(pp):
-#    a=np.zeros(pp.shape[0])
-#    b=np.zeros(pp.shape[0])
-#    x=[]
-#    y=[]
-#    p=np.copy(pp)
-#    for u, i in enumerate (pp):
-#        a[u]=float(i[1,1]-i[0,1])/float(i[1,0]-i[0,0]+1e-25)
-#        b[u]=float(-i[1,0]*a[u])+i[1,1]
-#        x.append(np.linspace(i[0,0],i[1,0],abs(i[1,0]-i[0,0])+1))
-#        y.append(x[u]*a[u]+b[u])
-#    y=np.array(y)
-#    x=np.array(x)
-#    index1=np.where(a<0.)
-#    a=np.delete(a,index1)
-#    b=np.delete(b,index1)
-#    x=np.delete(x,index1)
-#    y=np.delete(y,index1)
-#    p=np.delete(p,index1,0)
-#    index2=np.where(a>5.2)
-#    a=np.delete(a,index2)
-#    b=np.delete(b,index2)
-#    x=np.delete(x,index2)
-#    y=np.delete(y,index2)
-#    p=np.delete(p,index2,0)
-#    return a, b, x, y, p
-#
-#def Regroupe(pp,a,b):
-#    index=[]
-#    for u, i in enumerate(pp):
-#        temp=[]
-#        for j, k in enumerate(a):
-#            d1=DistancePointLine(i[0,0],i[0,1],k,b[j])
-#            d2=DistancePointLine(i[1,0],i[1,1],k,b[j])
-#            if ((d1<5) or (d2<5)):
-#                temp.append(j)
-#        if temp==[]:
-#            index.append(None)
-#        else:
-#            index.append(np.array(temp))
-#    return np.array(index)
-#
-#def Filtre(t,a,b,p,index):
-#    temp=np.zeros(t.shape)
-#    index2=np.where(t!=0)
-#    index2=np.array(index2).T
-#    for i in index:
-#        p0=min(p[i,0,0],p[i,1,0])
-#        p1=max(p[i,0,0],p[i,1,0])
-#        for j in index2:
-#            d=DistancePointLine(j[1],j[0],a[i],b[i])
-#            if (d<6) and (j[1]<(p1+10)) and (j[1]>(p0-10)):
-#                temp[j[0],j[1]]=1
-#    return temp
-#
-#def InlierPoints(t):
-#    temp=np.zeros(t.shape)
-#    index=np.where(t!=0)
-#    index=np.array(index).T
-#    model_robust,inliers=measure.ransac(index,measure.LineModel,min_samples=20,residual_threshold=1,max_trials=1000)
-#    for u, i in enumerate(inliers):
-#        if i==True:
-#            temp[index[u,0],index[u,1]]=1
-#    return temp
-#
-#def TrueTransition(t):
-#    h=transform.hough_line(t)
-#    peak=transform.hough_line_peaks(h[0],h[1],h[2])
-#    peak=np.array(peak)
-#    a=-np.tan(np.pi/2-peak[1,0])
-#    py=np.sin(peak[1,0])*abs(peak[2,0])
-#    px=np.cos(peak[1,0])*abs(peak[2,0])
-#    if peak[2,0]<0:
-#        py=-py
-#    b=py-a*px
-##    pp=transform.probabilistic_hough_line(t,line_gap=20)
-##    pp=np.array(pp)
-#    index=np.where(t!=0)
-##    xmin=t.shape[1]
-##    xmax=0.
-##    for u in pp:
-##        for i in u:
-##            if i[0]<xmin:
-##                xmin=i[0]
-##            if i[0]>xmax:
-##                xmax=i[0]
-#    xmin=min(index[1])
-#    xmax=max(index[1])
-#    y0=a*xmin+b
-#    y1=a*xmax+b
-#    p=np.array([[xmin,y0],[xmax,y1]])
-#    return a, b, p
-#
-#def RemovePoints(t,a,b,p):
-#    temp=np.copy(t)
-#    index=np.where(t!=0)
-#    index=np.array(index).T
-#    x0=min(p[0,0],p[1,0])
-#    x1=max(p[0,0],p[1,0])
-#    for u, i in enumerate(index):
-#        d=DistancePointLine(i[1],i[0],a,b)
-#        if (d<5) and (i[1]<(x1+5)) and (i[1]>(x0-5)):
-#            temp[i[0],i[1]]=0
-#    return temp
-#
-#def Sequence(t,n,tran):
-#    p=transform.probabilistic_hough_line(t)
-#    if p==[]:
-#        return t, None
-#    else:
-#        p=np.array(p)
-#        a,b,x,y,pp=ParamTransition(p)
-#        plt.figure(n)
-#        plt.imshow(t,aspect='auto',cmap=cm.bone)
-#        for u in tran:
-#            plt.plot(u.xx,u.yy,'b')
-#        for u in range(pp.shape[0]):
-#            plt.plot(x[u],y[u],'r')
-#        index=Regroupe(pp,a,b)
-#        temp=Filtre(t,a,b,p,index[0])
-#        temp=InlierPoints(temp)
-#        aa, bb, pp=TrueTransition(temp)
-#        xx=np.linspace(pp[0,0],pp[1,0],abs(pp[0,0]-pp[1,0])+1)
-#        yy=aa*xx+bb
-#        plt.plot(xx,yy,'g')
-#        temp=RemovePoints(t,aa,bb,pp)
-#        return temp, pp
-#
-#def Looping(t):
-#    tran=np.array([])
-#    for u in range(40):
-#        t, p=Sequence(t,u,tran)
-#        if p==None:
-#            break
-#        else:
-#            pp=Segment(p[0],p[1])
-#            tran=list(tran)
-#            tran.append(pp)
-#            tran=np.array(tran)
-#    return tran
+def _sigma_mp_square(cluster, p0, u):
+    """
+    
+    """
+    ss = 0.
+    for j in cluster:
+        ss = ss+((u[1]*(j[1]-p0[1])+u[0]*(j[0]-p0[0]))**2)
+    ss = 1./ss
+    return ss
+
+def _sigma_bp_square(n):
+    """
+    
+    """
+    return 1./n
+
+def _matrixM(p0, u, v, sigma_mp_sq, sigma_bp_sq):
+    """
+    
+    """
+    aa = -u[1]*p0[1]-u[0]*p0[0]
+    bb = u[1]/np.sqrt(1-v[1]*v[1])
+    matrix = np.zeros((2,2))
+    matrix[0][0] = aa*aa*sigma_mp_sq + sigma_bp_sq
+    matrix[0][1] = aa*bb*sigma_mp_sq
+    matrix[1][0] = matrix[0,1].copy()
+    matrix[1][1] = bb*bb*sigma_mp_sq
+    return matrix
+
+def _sigmas(p0, u, v, sigma_mp_sq, sigma_bp_sq):
+    """
+    
+    """
+    matrix = _matrixM(p0, u, v, sigma_mp_sq, sigma_bp_sq)
+    sigma_rho_sq = 2*2*matrix[0,0]
+    if matrix[1,1]!=0.:
+        sigma_theta_sq = 2*2*matrix[1,1]
+    else:
+        sigma_theta_sq = 2*2*.1
+    sigma_rho_theta = matrix [0,1]
+    return sigma_rho_sq, sigma_theta_sq, sigma_rho_theta
+
+def Sigmas(cluster, p0, u, v):
+    """
+    
+    """
+    sigma_mp_sq = _sigma_mp_square(cluster, p0, u)
+    sigma_bp_sq = _sigma_bp_square(cluster.shape[0])
+    sigma_rho_sq, sigma_theta_sq, sigma_rho_theta = _sigmas(p0, u, v, sigma_mp_sq, sigma_bp_sq)
+    return sigma_rho_sq, sigma_theta_sq, sigma_rho_theta
