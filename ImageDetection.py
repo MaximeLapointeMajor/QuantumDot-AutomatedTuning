@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Jul 28 10:45:21 2016
-
 @author: Maxime
 """
 
@@ -12,7 +11,7 @@ import numpy as np
 #import matplotlib.cm as cm
 from itertools import product
 from numpy.linalg import eig
-
+import lmfit as lmf
 
 
 #from scipy.optimize import curve_fit
@@ -59,18 +58,22 @@ class segment:
 class Cluster:
     """
     """
-    def __init__(self, cluster):
+    def __init__(self, cluster, max_gap):
         
-        p0, u, v, pt = u_v_(cluster)
+        p0, u, v, pt, ratio, length, covar = u_v_(cluster)
         if v[0]<0.:
             v = -v
 #        if u[1]<0.:
 #            u = -u
+        nPoints = cluster.T[0].shape[0]
         
         self.pt = pt
         self.pt_x = pt[1]
         self.pt_y = pt[0]
         self.cluster = cluster
+        self.nPoints = cluster.T[0].shape[0]
+        self.ratio = ratio
+        self.length = length
         self.p0 = p0
         self.u = u
         self.v = v
@@ -95,16 +98,22 @@ class Cluster:
         self.sigma_rho_sq = sigma_rho_sq
         self.sigma_theta_sq = sigma_theta_sq
         self.sigma_rho_theta = sigma_rho_theta
-        
-        
-        
-        
-        
-        
+        self.sigma_theta = np.sqrt(sigma_theta_sq)
+        self.sigma_rho = np.sqrt(sigma_rho_sq)
 
+        correl_coeff = sigma_rho_theta/np.sqrt(sigma_theta_sq*sigma_rho_sq)
+        correction = nPoints*ratio/(1.+max_gap)
+        cp = _rotate(cluster, u, v, p0)
 
-
-
+        self.correl_coeff = correl_coeff
+        self.correction_coeff = correction
+        self.corr_sigma_theta = np.sqrt(sigma_theta_sq)*correction
+        self.corr_sigma_rho = np.sqrt(sigma_rho_sq)*correction
+        self.corr_sigma_rt = sigma_rho_theta*correction*correction
+        self.corr_x = cp[1]
+        self.corr_y = cp[0]
+        
+        self.covar = covar
 
 
 
@@ -151,8 +160,6 @@ def Linkage(image, gap_size=0, min_cluster_size=4):
     image           \t must be a binary image.  Points to be clustered must have a value different than 0.
     gap_size        \t is the maximum number of pixels separating points that belong to a cluster.  Must be an integer
     min_cluster_size\t is the minimum ammount of points that a group of points must contain in order to be considered as a cluster.  If the group of points does not meet the requirement, they are placed in the left-over category in any order.
-
-
     """
     cc = []
     leftover = []
@@ -200,6 +207,14 @@ def _next(img, ref, gap_size=0):
             break
     return ret
 
+def _rotate(cluster, u, v, p0):
+    clust = cluster.copy()
+    clust = clust.T
+    cp = np.zeros(clust.shape)
+    cp[0] = v[1]*(clust[1]-p0[1])+v[0]*(clust[0]-p0[0])
+    cp[1] = u[1]*(clust[1]-p0[1])+u[0]*(clust[0]-p0[0])
+    return cp
+
 def u_v_(cluster):
     """
     Takes a cluster of coordinates and calculates the euclidian average and direction vector
@@ -214,6 +229,7 @@ def u_v_(cluster):
     """
     p0x = np.mean(cluster.T[1])
     p0y = np.mean(cluster.T[0])
+    p0 = np.array([p0y, p0x])
     eigmax = -1.0e100
     for u in cluster:
         x = u[1]-p0x
@@ -231,7 +247,23 @@ def u_v_(cluster):
     ### The eigenvectors are also inverted ([y,x] instead of [x,y]), which in our case fits our need, but could cause problems to a user.
     u = vecmin[np.array([0,1])].copy()
     v = vecmax[np.array([0,1])].copy()
-    return np.array([p0y, p0x]), u, v, pt
+    cp = _rotate(cluster, u, v, p0)
+    mod = lmf.models.LinearModel()
+    out = mod.fit(cp[0], x=cp[1])
+    slope = out.values.get('slope')
+    theta_y = _theta_y(v)-AngleLineXAxis(slope)*np.pi/180.
+    u[0] = np.cos(theta_y)
+    u[1] = -np.sin(theta_y)
+    v[1] = u[0].copy()
+    v[0] = -u[1].copy()
+    cp = _rotate(cluster, u, v, p0)
+    length = max(cp[1])-min(cp[1])
+    ratio = (max(cp[0])-min(cp[0]))/length
+    mod = lmf.models.LinearModel()
+    mod.set_param_hint('slope', value=0.)
+    out = mod.fit(cp[0], x=cp[1])
+    covar = out.covar
+    return p0, u, v, pt, ratio, length, covar
 
 def _rho(v, p0):
     """
@@ -295,3 +327,25 @@ def Sigmas(cluster, p0, u, v):
     sigma_bp_sq = _sigma_bp_square(cluster.shape[0])
     sigma_rho_sq, sigma_theta_sq, sigma_rho_theta = _sigmas(p0, u, v, sigma_mp_sq, sigma_bp_sq)
     return sigma_rho_sq, sigma_theta_sq, sigma_rho_theta
+
+
+
+def _kernel(angle, dist, sigma_rho, sigma_theta, sigma_rho_theta, rho, theta_y):
+    angle = angle*np.pi/180.
+    r = sigma_rho_theta/(sigma_rho*sigma_theta)
+    kernel = np.zeros((dist.shape[0],angle.shape[0]))
+    for u, i in enumerate(angle):
+        for j, k in enumerate(dist):
+            z0 = (k-rho)*(k-rho)/(sigma_rho*sigma_rho)-2*r*(k-rho)*(i-theta_y)/(sigma_rho*sigma_theta)+(i-theta_y)*(i-theta_y)/(sigma_theta*sigma_theta)
+#            z1 = (k+rho)*(k+rho)/(sigma_rho*sigma_rho)-2*r*(k+rho)*(i-theta_y-2*np.pi)/(sigma_rho*sigma_theta)+(i-theta_y-2*np.pi)*(i-theta_y-2*np.pi)/(sigma_theta*sigma_theta)
+#            z2 = (k+rho)*(k+rho)/(sigma_rho*sigma_rho)-2*r*(k+rho)*(i-theta_y+2*np.pi)/(sigma_rho*sigma_theta)+(i-theta_y+2*np.pi)*(i-theta_y+2*np.pi)/(sigma_theta*sigma_theta)
+            kernel[j, u] = 1/(2*np.pi*sigma_rho*sigma_theta*np.sqrt(1-r*r))*np.exp(-z0/(2*(1-r*r)))#+1/(2*np.pi*sigma_rho*sigma_theta*np.sqrt(1-r*r))*np.exp(-z1/(2*(1-r*r)))+1/(2*np.pi*sigma_rho*sigma_theta*np.sqrt(1-r*r))*np.exp(-z2/(2*(1-r*r)))
+    return kernel
+
+
+
+
+
+
+
+
