@@ -13,7 +13,6 @@ from itertools import product
 from numpy.linalg import eig
 import lmfit as lmf
 
-
 #from scipy.optimize import curve_fit
 
 class segment:
@@ -60,17 +59,26 @@ class Cluster:
     """
     def __init__(self, cluster, max_gap):
         
-        p0, u, v, pt, ratio, length, covar = u_v_(cluster)
+        p0, u, v = u_v_(cluster)
         if v[0]<0.:
             v = -v
+        if u[1]<0.:
+            u = -u
+        p0, u, v = _correction_uv(cluster, u, v, p0)
+        if v[0]<0.:
+            v = -v
+        if u[1]<0.:
+            u = -u
+        cp = _rotate(cluster, u, v, p0)
+        length, ratio = _ratio(cp)
 #        if u[1]<0.:
 #            u = -u
         nPoints = cluster.T[0].shape[0]
         
-        self.pt = pt
-        self.pt_x = pt[1]
-        self.pt_y = pt[0]
+
         self.cluster = cluster
+        self.ccx = cluster.T[1]
+        self.ccy = cluster.T[0]
         self.nPoints = cluster.T[0].shape[0]
         self.ratio = ratio
         self.length = length
@@ -112,10 +120,112 @@ class Cluster:
         self.corr_sigma_rt = sigma_rho_theta*correction*correction
         self.corr_x = cp[1]
         self.corr_y = cp[0]
+
+        start, stop = _start_stop(cp[1], cp[0], u, v, p0)
+        self.start = start
+        self.start_x = start[1]
+        self.start_y = start[0]
+        self.stop = stop
+        self.stop_x = stop[1]
+        self.stop_y = stop[0]
+
+        aa = -Slope(90-theta_y*180./np.pi)
+        bb = -aa*p0[1]+p0[0]
+        self.slope = aa
+        self.intercept = bb
+
+        segment_start, segment_stop = _segment_start_stop(cluster.T[1], cluster.T[0], aa, bb)
+        self.seg_start = segment_start
+        self.seg_stop = segment_stop
+        self.seg_start_x = segment_start[1]
+        self.seg_start_y = segment_start[0]
+        self.seg_stop_x = segment_stop[1]
+        self.seg_stop_y = segment_stop[0]
+
+        xSegment = np.array((segment_start[1], segment_stop[1]))
+        ySegment = np.array((segment_start[0], segment_stop[0]))
+        self.xSegment = xSegment
+        self.ySegment = ySegment
+
+
+def _segment_start_stop(x, y, a, b):
+    """
+    """
+    if a > 0.:
+        xmax = max(x)
+        xmin = min(x)
+        ymax = max(y)
+        ymin = min(y)
+        xmax_y = a*xmax+b
+        xmin_y = a*xmin+b
+        if xmax == xmin:
+            pass
+        else:
+            if xmin_y < ymin:
+                xmin = (ymin-b)/a
+                #ymin est bon et ymin_x est le x associé.
+            elif ymin <= xmin_y:
+                ymin = xmin_y.copy()
+                #xmin_y est bon et xmin est le x associé.
+            if xmax_y < ymax:
+                ymax = xmax_y.copy()
+                #xmax_y est bon est xmax est le x associé
+            elif ymax <= xmax_y:
+                xmax = (ymax-b)/a
+                #ymax est bon et ymax_x est le x associé
+    elif a < 0.:
+        xmax = max(x)
+        xmin = min(x)
+        ymax = min(y)
+        ymin = max(y)
+        xmax_y = a*xmax+b
+        xmin_y = a*xmin+b
+        if xmax == xmin:
+            pass
+        else:
+            if xmin_y > ymin:
+                xmin = (ymin-b)/a
+                #ymin est bon et ymin_x est le x associé.
+            elif ymin >= xmin_y:
+                ymin = xmin_y.copy()
+                #xmin_y est bon et xmin est le x associé.
+            if xmax_y > ymax:
+                ymax = xmax_y.copy()
+                #xmax_y est bon est xmax est le x associé
+            elif ymax >= xmax_y:
+                xmax = (ymax-b)/a
+                #ymax est bon et ymax_x est le x associé
+    elif a == 0.:
+        xmax = max(x)
+        xmin = min(x)
+        ymax = a*xmax+b
+        ymin = ymax.copy()
+    return np.array((ymin, xmin)), np.array((ymax, xmax))
         
-        self.covar = covar
 
 
+
+
+
+def _start_stop(corrx, corry, u, v, p0):
+    """
+    """
+    index = np.argsort(corrx)
+    x0 = corrx[index[0]]
+    x1 = corrx[index[-1]]
+    y0 = corry[index[0]]
+    y1 = corry[index[-1]]
+    xstart = int(round(u[1]*x0-u[0]*y0+p0[1]))
+    ystart = int(round(-v[1]*x0+v[0]*y0+p0[0]))
+    xstop = int(round(u[1]*x1-u[0]*y1+p0[1]))
+    ystop = int(round(-v[1]*x1+v[0]*y1+p0[0]))
+    if ystart < ystop:
+        start = np.array((ystart, xstart))
+        stop = np.array((ystop, xstop))
+    else:
+        stop = np.array((ystart, xstart))
+        start = np.array((ystop, xstop))
+    return start, stop
 
 
 def DistancePointLine(x, y, a, b):
@@ -207,6 +317,35 @@ def _next(img, ref, gap_size=0):
             break
     return ret
 
+def Segmentation(cluster):
+    p0, u ,v = u_v_(cluster)
+    cp = _rotate(cluster, u, v, p0)
+    index = np.argsort(cp[1])
+    length, ratio = _ratio(cp)
+    i = np.where(abs(cp[0, index])==max(abs(cp[0, index])))[0][0]
+    cp0 = cp[:,i:]
+    cp1 = cp[:,:i]
+    if cp0.shape[1]<5 or cp1.shape[1]<5:
+        ret = None
+    else:
+        clow = cluster.T[:,index[:i]].T
+        chigh = cluster.T[:,index[i:]].T
+        p0l, ul ,vl = u_v_(clow)
+        p0h, uh ,vh = u_v_(chigh)
+        cpl = _rotate(clow, ul, vl, p0l)
+        cph = _rotate(chigh, uh, vh, p0h)
+        lengthl, ratiol = _ratio(cpl)
+        lengthh, ratioh = _ratio(cph)
+        if ratiol>1.:
+            ratiol=1./ratiol
+        if ratioh>1.:
+            ratioh=1./ratioh
+        if ratiol<ratio or ratioh<ratio:
+            ret = clow, chigh
+        else:
+            ret = None
+    return ret
+
 def _rotate(cluster, u, v, p0):
     clust = cluster.copy()
     clust = clust.T
@@ -239,7 +378,7 @@ def u_v_(cluster):
         eigvalue, eigvector = eig(mm)
         for i, k in enumerate(eigvalue):
             if k>eigmax:
-                pt = u.copy()
+#                pt = u.copy()
                 eigmax = k
                 vecmin = eigvector[i-1]
                 vecmax = eigvector[i]
@@ -247,23 +386,33 @@ def u_v_(cluster):
     ### The eigenvectors are also inverted ([y,x] instead of [x,y]), which in our case fits our need, but could cause problems to a user.
     u = vecmin[np.array([0,1])].copy()
     v = vecmax[np.array([0,1])].copy()
+    return p0, u, v
+
+def _correction_uv(cluster, u, v, p0):
     cp = _rotate(cluster, u, v, p0)
+    index = np.argsort(cp[1])
     mod = lmf.models.LinearModel()
-    out = mod.fit(cp[0], x=cp[1])
+    out = mod.fit(cp[0, index], x=cp[1, index])
     slope = out.values.get('slope')
-    theta_y = _theta_y(v)-AngleLineXAxis(slope)*np.pi/180.
+    theta_y = _theta_y(v)+AngleLineXAxis(slope)*np.pi/180.
     u[0] = np.cos(theta_y)
     u[1] = -np.sin(theta_y)
     v[1] = u[0].copy()
     v[0] = -u[1].copy()
-    cp = _rotate(cluster, u, v, p0)
+#    cp = _rotate(cluster, u, v, p0)
+#    length, ratio = _ratio(cp)
+#    mod = lmf.models.LinearModel()
+#    mod.set_param_hint('slope', value=0.)
+#    out = mod.fit(cp[0], x=cp[1])
+#    covar = out.covar
+    return p0, u, v#, ratio, length, covar
+
+def _ratio(cp):
     length = max(cp[1])-min(cp[1])
-    ratio = (max(cp[0])-min(cp[0]))/length
-    mod = lmf.models.LinearModel()
-    mod.set_param_hint('slope', value=0.)
-    out = mod.fit(cp[0], x=cp[1])
-    covar = out.covar
-    return p0, u, v, pt, ratio, length, covar
+    ratio = (max(cp[0])-min(cp[0])+1)/length
+    return length, ratio
+
+
 
 def _rho(v, p0):
     """
@@ -337,8 +486,8 @@ def _kernel(angle, dist, sigma_rho, sigma_theta, sigma_rho_theta, rho, theta_y):
     for u, i in enumerate(angle):
         for j, k in enumerate(dist):
             z0 = (k-rho)*(k-rho)/(sigma_rho*sigma_rho)-2*r*(k-rho)*(i-theta_y)/(sigma_rho*sigma_theta)+(i-theta_y)*(i-theta_y)/(sigma_theta*sigma_theta)
-#            z1 = (k+rho)*(k+rho)/(sigma_rho*sigma_rho)-2*r*(k+rho)*(i-theta_y-2*np.pi)/(sigma_rho*sigma_theta)+(i-theta_y-2*np.pi)*(i-theta_y-2*np.pi)/(sigma_theta*sigma_theta)
-#            z2 = (k+rho)*(k+rho)/(sigma_rho*sigma_rho)-2*r*(k+rho)*(i-theta_y+2*np.pi)/(sigma_rho*sigma_theta)+(i-theta_y+2*np.pi)*(i-theta_y+2*np.pi)/(sigma_theta*sigma_theta)
+#            z1 = (k+rho)*(k+rho)/(sigma_rho*sigma_rho)-2*r*(k+rho)*(i-theta_y-np.pi)/(sigma_rho*sigma_theta)+(i-theta_y-np.pi)*(i-theta_y-np.pi)/(sigma_theta*sigma_theta)
+#            z2 = (k+rho)*(k+rho)/(sigma_rho*sigma_rho)-2*r*(k+rho)*(i-theta_y+np.pi)/(sigma_rho*sigma_theta)+(i-theta_y+np.pi)*(i-theta_y+np.pi)/(sigma_theta*sigma_theta)
             kernel[j, u] = 1/(2*np.pi*sigma_rho*sigma_theta*np.sqrt(1-r*r))*np.exp(-z0/(2*(1-r*r)))#+1/(2*np.pi*sigma_rho*sigma_theta*np.sqrt(1-r*r))*np.exp(-z1/(2*(1-r*r)))+1/(2*np.pi*sigma_rho*sigma_theta*np.sqrt(1-r*r))*np.exp(-z2/(2*(1-r*r)))
     return kernel
 
