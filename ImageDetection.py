@@ -222,6 +222,9 @@ class Transition:
 
 
 def Initialization(cc, max_gap=0):
+    """
+    
+    """
     cc = list(cc)
     leftover = cc.pop(-1)
     clust = []
@@ -235,10 +238,6 @@ def Initialization(cc, max_gap=0):
             cc.append(ret[1])
     clust.append(Cluster(leftover, max_gap))
     return clust
-
-
-
-
 
 def DistancePointLine(x, y, a, b):
     """
@@ -266,10 +265,6 @@ def Slope(angle):
     the angle must be in degrees.
     """
     return np.tan(angle*np.pi/180.)
-
-
-
-
 
 
 def Linkage(image, gap_size=0, min_cluster_size=4):
@@ -586,8 +581,7 @@ def _split(corrx, corry, u, v, p0, ratio):
     for i, j in izip(corrx, corry):
         d.append(DistancePointLine(i, j, a, b))
     d = np.array(d)
-    ind = np.where(d==max(d))
-    ind = ind[0][0]
+    ind = np.argmax(d)
     c0 = np.array((corry[index][:ind], corrx[index][:ind]))
     c1 = np.array((corry[index][ind:], corrx[index][ind:]))
     if c0.shape[1]>4 and c1.shape[1]>4:
@@ -630,13 +624,176 @@ def _split(corrx, corry, u, v, p0, ratio):
         ret = None
     return ret
 
+def _init_guess(cc):
+    """
+    
+    """
+    ss = np.array(cc).shape[0]
+    ss = np.zeros((3, ss))
+    for u, i in enumerate(cc):
+        ss[0, u] = u
+        ss[1, u] = i.length
+        ss[2, u] = i.corr_sigma_theta
+    s = []
+    for u in ss.T:
+        if u[2] < np.pi/8:
+            s.append(u)
+    if s!=[]:
+        s = np.array(s).T
+        ind = np.argmax(s[1,:])
+        ind = s[0, ind]
+        return int(round(ind))
+    else:
+        return None
+  
+def _rrel(nSegments, xPixels, yPixels):
+    """
+    
+    """
+    d = float(nSegments)/float(xPixels*yPixels)
+    return 2*np.sqrt(1./(np.pi*d))
+    
+def _distance(end1, end2):
+    """
+    
+    """
+    a = end1[0]-end2[0]
+    b = end1[1]-end2[1]
+    return np.sqrt(a*a+b*b)
+    
+def _delta_theta(t1, t2):
+    """
+    
+    """
+    return abs(t1-t2)
+    
+def _perpendicular_dist(a, b, p0):
+    """
+    
+    """
+    d0 = DistancePointLine(p0[1], p0[0], a, b)
+    return d0
+
+def _parallelism(theta, s, l1, l2):
+    """
+    
+    """
+    return 4*theta*s*l2/(np.pi*l1*l1)
 
 
+def _collinearity(theta, s, g, l1):
+    """
+    
+    """
+    return 4*theta*s*(g+l1)/(np.pi*l1*l1)
 
+def _score(theta, s, g, l1):
+    """
+    
+    """
+    return _collinearity(theta, s, g, l1)
 
+def Transitions(cc, imgShape):
+    """
+    
+    """
+    nCluster = np.array(cc).shape[0]
+    tlist = []
+    cc = list(cc)
+    cc2 = cc
+    next_tran = 0
+    while next_tran != None:
+        next_tran, cc2 = _next_transition(cc2, nCluster, imgShape)
+        if next_tran != None:
+            tlist.append(next_tran)
+    #éliminer les transitions de merde et conserver les bonnes
+    return tlist, cc2
 
+def _next_transition(cc, nCluster, imgShape):
+    """
+    
+    """
+    index = []
+    init_guess_index = _init_guess(cc)
+    if init_guess_index==None:
+        return None, cc
+    else:
+        index.append(init_guess_index)
+        clust = cc[init_guess_index]
+        tclust = Transition(clust)
+        #ici on pop cc[init_guess_index]
+        ind = init_guess_index
+        while ind != None:
+            ind = _extend(cc, ind, nCluster, imgShape, side="left")
+            if ind != None:
+                index.append(ind)
+                tclust = Transition(cc[ind], tclust)
+        clust = cc[init_guess_index]
+        ind = init_guess_index
+        while ind != None:
+            ind = _extend(cc, ind, nCluster, imgShape, side="right")
+            if ind != None:
+                tclust = Transition(cc[ind], tclust)
+                index.append(ind)
+        ind = -np.array(index)
+        ind = np.argsort(ind)
+        cc2 = cc
+        for u in ind:
+            cc2.pop(index[u])
+        return tclust, cc2
 
-
+    #going left
+    
+    #going right
+    
+    
+def _extend(cc, init_guess_index, nCluster, imgShape, side):
+    """
+    
+    """
+    rel_r = _rrel(nCluster, imgShape[0], imgShape[1])
+    ind, r, dtheta = [], [], []
+    cc = np.array(cc)
+    for u, i in enumerate(cc):
+        if side == "left":
+            rr = _distance(i.stop, cc[init_guess_index].start)
+            s = 1
+        if side == "right":
+            rr = _distance(i.start, cc[init_guess_index].stop)
+            s = -1.
+        dt = abs(cc[init_guess_index].theta_y-i.theta_y)
+        if (u != init_guess_index) and (i.p0_x*s < cc[init_guess_index].p0_x*s) and (dt < min((cc[init_guess_index].corr_sigma_theta,i.corr_sigma_theta))) and (rr < rel_r): # or (_distance(_distance(i.stop, cc[init_guess_index].start) < rel_r) < rel_r): [[[[[si ça link pas bien cest prob la 2e cond manquante]]]]]
+            ind.append(u)
+            r.append(rr)
+            dtheta.append(dt)
+    cc = list(cc)
+    ind, r, dtheta = np.array(ind), np.array(r), np.array(dtheta)
+    s, collin, score = np.zeros(ind.shape[0]), np.zeros(ind.shape[0]), np.zeros(ind.shape[0])
+    for u, i in enumerate(ind):
+        s[u] = _perpendicular_dist(cc[init_guess_index].slope, cc[init_guess_index].intercept, cc[i].p0)
+        collin[u] = _collinearity(dtheta[u], s[u], r[u], cc[i].length)
+        score[u] = _score(dtheta[u], s[u], r[u], cc[i].length)
+    try:
+        if min(score) < 1.:
+            best = np.argmin(score)
+            return ind[best]
+        else:
+            return None
+    except (ValueError):
+        return None
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
 
 
 
@@ -656,43 +813,6 @@ def _split(corrx, corry, u, v, p0, ratio):
 ##            z2 = (k+rho)*(k+rho)/(sigma_rho*sigma_rho)-2*r*(k+rho)*(i-theta_y+np.pi)/(sigma_rho*sigma_theta)+(i-theta_y+np.pi)*(i-theta_y+np.pi)/(sigma_theta*sigma_theta)
 #            kernel[j, u] = 1/(2*np.pi*sigma_rho*sigma_theta*np.sqrt(1-r*r))*np.exp(-z0/(2*(1-r*r)))#+1/(2*np.pi*sigma_rho*sigma_theta*np.sqrt(1-r*r))*np.exp(-z1/(2*(1-r*r)))+1/(2*np.pi*sigma_rho*sigma_theta*np.sqrt(1-r*r))*np.exp(-z2/(2*(1-r*r)))
 #    return kernel
-
-#def Segmentation(cluster):
-#    """
-#    This function is a failed attempt at duplicating the "segmentation of linked points" presented in the 3D object recognition article.
-#    
-#    The results do not work very well for our purpose.
-#    """
-#    p0, u ,v = u_v_(cluster)
-#    cp = _rotate(cluster, u, v, p0)
-#    index = np.argsort(cp[1])
-#    length, ratio = _ratio(cp)
-#    i = np.where(abs(cp[0, index])==max(abs(cp[0, index])))[0][0]
-#    cp0 = cp[:,i:]
-#    cp1 = cp[:,:i]
-#    if cp0.shape[1]<5 or cp1.shape[1]<5:
-#        ret = None
-#    else:
-#       clow = cluster.T[:,index[:i]].T
-#       chigh = cluster.T[:,index[i:]].T
-#       p0l, ul ,vl = u_v_(clow)
-#       p0h, uh ,vh = u_v_(chigh)
-#       cpl = _rotate(clow, ul, vl, p0l)
-#       cph = _rotate(chigh, uh, vh, p0h)
-#       lengthl, ratiol = _ratio(cpl)
-#       lengthh, ratioh = _ratio(cph)
-#       if ratiol>1.:
-#           ratiol=1./ratiol
-#       if ratioh>1.:
-#           ratioh=1./ratioh
-#       if ratiol<ratio or ratioh<ratio:
-#           ret = clow, chigh
-#       else:
-#           ret = None
-#   return ret
-
-
-
 
 
 
