@@ -11,7 +11,9 @@ import numpy as np
 #import matplotlib.cm as cm
 from itertools import product, izip
 from numpy.linalg import eig
+from copy import deepcopy
 import lmfit as lmf
+
 
 #from scipy.optimize import curve_fit
 
@@ -700,7 +702,7 @@ def Transitions(cc, imgShape):
     nCluster = np.array(cc).shape[0]
     tlist = []
     cc = list(cc)
-    cc2 = cc
+    cc2 = deepcopy(cc)
     next_tran = 0
     while next_tran != None:
         next_tran, cc2 = _next_transition(cc2, nCluster, imgShape)
@@ -719,35 +721,40 @@ def _next_transition(cc, nCluster, imgShape):
         return None, cc
     else:
         index.append(init_guess_index)
-        clust = cc[init_guess_index]
+        clust = deepcopy(cc[init_guess_index])
         tclust = Transition(clust)
         #ici on pop cc[init_guess_index]
         ind = init_guess_index
         while ind != None:
-            ind = _extend(cc, ind, nCluster, imgShape, side="left")
+            ind = _extend(cc, ind, index, nCluster, imgShape, side="left")
             if ind != None:
                 index.append(ind)
-                tclust = Transition(cc[ind], tclust)
-        clust = cc[init_guess_index]
+                clust = deepcopy(cc[ind])
+                tclust = Transition(clust, tclust)
+        clust = deepcopy(cc[init_guess_index])
         ind = init_guess_index
         while ind != None:
-            ind = _extend(cc, ind, nCluster, imgShape, side="right")
+            ind = _extend(cc, ind, index, nCluster, imgShape, side="right")
             if ind != None:
-                tclust = Transition(cc[ind], tclust)
                 index.append(ind)
+                clust = deepcopy(cc[ind])
+                tclust = Transition(clust, tclust)
         ind = -np.array(index)
         ind = np.argsort(ind)
-        cc2 = cc
+        cc2 = deepcopy(cc)
         for u in ind:
             cc2.pop(index[u])
         return tclust, cc2
 
-    #going left
+def _slope_int(p0, p1):
+    """
     
-    #going right
+    """
+    a = (p1[0]-p0[0])/(p1[1]-p0[1])
+    b = p0[0]-a*p0[1]
+    return a, b
     
-    
-def _extend(cc, init_guess_index, nCluster, imgShape, side):
+def _extend(cc, init_guess_index, indexx, nCluster, imgShape, side):
     """
     
     """
@@ -757,15 +764,22 @@ def _extend(cc, init_guess_index, nCluster, imgShape, side):
     for u, i in enumerate(cc):
         if side == "left":
             rr = _distance(i.stop, cc[init_guess_index].start)
-            s = 1
         if side == "right":
             rr = _distance(i.start, cc[init_guess_index].stop)
-            s = -1.
-        dt = abs(cc[init_guess_index].theta_y-i.theta_y)
-        if (u != init_guess_index) and (i.p0_x*s < cc[init_guess_index].p0_x*s) and (dt < min((cc[init_guess_index].corr_sigma_theta,i.corr_sigma_theta))) and (rr < rel_r): # or (_distance(_distance(i.stop, cc[init_guess_index].start) < rel_r) < rel_r): [[[[[si ça link pas bien cest prob la 2e cond manquante]]]]]
-            ind.append(u)
-            r.append(rr)
-            dtheta.append(dt)
+        if (u not in indexx) and (rr < rel_r): #and (dt < min((cc[init_guess_index].corr_sigma_theta,i.corr_sigma_theta))):
+            a, b = _slope_int(i.p0, cc[init_guess_index].p0)
+            ty = (90.+AngleLineXAxis(a))*np.pi/180.
+            dt = abs(cc[init_guess_index].theta_y-i.theta_y)
+            if dt >= np.pi/2:
+                if ty < min((cc[init_guess_index].theta_y, i.theta_y))+(10.*np.pi/180) or ty > max((cc[init_guess_index].theta_y, i.theta_y))-(10.*np.pi/180):
+                    ind.append(u)
+                    r.append(rr)
+                    dtheta.append(dt)
+            else:
+                if ty > min((cc[init_guess_index].theta_y, i.theta_y))-(10.*np.pi/180) and ty < max((cc[init_guess_index].theta_y, i.theta_y))+(10.*np.pi/180):
+                    ind.append(u)
+                    r.append(rr)
+                    dtheta.append(dt)
     cc = list(cc)
     ind, r, dtheta = np.array(ind), np.array(r), np.array(dtheta)
     s, collin, score = np.zeros(ind.shape[0]), np.zeros(ind.shape[0]), np.zeros(ind.shape[0])
@@ -774,7 +788,7 @@ def _extend(cc, init_guess_index, nCluster, imgShape, side):
         collin[u] = _collinearity(dtheta[u], s[u], r[u], cc[i].length)
         score[u] = _score(dtheta[u], s[u], r[u], cc[i].length)
     try:
-        if min(score) < 1.:
+        if min(score) <= 1.:
             best = np.argmin(score)
             return ind[best]
         else:
@@ -813,6 +827,3 @@ def _extend(cc, init_guess_index, nCluster, imgShape, side):
 ##            z2 = (k+rho)*(k+rho)/(sigma_rho*sigma_rho)-2*r*(k+rho)*(i-theta_y+np.pi)/(sigma_rho*sigma_theta)+(i-theta_y+np.pi)*(i-theta_y+np.pi)/(sigma_theta*sigma_theta)
 #            kernel[j, u] = 1/(2*np.pi*sigma_rho*sigma_theta*np.sqrt(1-r*r))*np.exp(-z0/(2*(1-r*r)))#+1/(2*np.pi*sigma_rho*sigma_theta*np.sqrt(1-r*r))*np.exp(-z1/(2*(1-r*r)))+1/(2*np.pi*sigma_rho*sigma_theta*np.sqrt(1-r*r))*np.exp(-z2/(2*(1-r*r)))
 #    return kernel
-
-
-
