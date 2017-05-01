@@ -58,7 +58,44 @@ class segment:
 
 class Cluster:
     """
+    The Cluster class is used to extract useful information of a cluster for further processing
+    The __init__ takes the y-x coordinates of all the points of the cluster (in the form (:,2)) and the maximum gap size separating points apart of that cluster
     
+    Attributes
+    -----------
+    cluster  . . . . .\t coordinates in the shape (:,2) of all points that are part of the cluster.
+    ccx, ccy . . . . .\t x and y coordinates of the cluster.  Array-like.
+    nPoints  . . . . .\t number of points
+    ratio  . . . . . .\t ratio of height/length of the cluster in the rotated frame
+    length . . . . . .\t length of the cluster
+    p0 . . . . . . . .\t center position of the cluster (mean of y coordinates and x coordinates)
+    u  . . . . . . . .\t unitary directional vector of the cluster.  u_x always > 0
+    v  . . . . . . . .\t unitary vector perpendicular to u.  v_y always > 0
+
+    theta_y  . . . . .\t angle between the negative y axis and the directional vector of the cluster, u.
+    rho  . . . . . . .\t shortest distance between the origin (top left) of the diagram and the line passing through p0 along u.
+    slope  . . . . . .\t slope of the line passing through p0 along the directional vector u in a pixel-pixel axis diagram.
+    intercept  . . . .\t intercept of the line passing through p0 along the directional vector u in a pixel-pixel axis diagram.
+    
+    sigma_theta  . . .\t standard deviation on the theta_y variable as calculated in [1]
+    sigma_rho  . . . .\t standard deviation on the rho variable as calculated in [1]
+    sigma_rho_theta  .\t covariance of the rho and theta variables as calculated in [1]
+
+    corr_sigma_theta .\t corrected sigma theta based on the non-collinearity of the points of the cluster
+    corr_sigma_rho . .\t -- unavailable --
+    corr_sigma_rt  . .\t -- unavailable --
+    corr_x . . . . . .\t x axis coordinates of the points of the cluster in the rotated frame (nul-slope)
+    corr_y . . . . . .\t y axis coordinates of the points of the cluster in the rotated frame (nul-slope)
+    
+    start  . . . . . .\t Corner of the smallest window containing the cluster with the smallest x and y coordinates.
+    stop . . . . . . .\t Corner of the smallest window containing the cluster with the highest x and y coordinates.
+    seg_start  . . . .\t start coordinates of the best segment identified in the cluster.  (y,x) shaped.  The start is the smallest x-coordinate
+    seg_stop . . . . .\t end coordinates of the best segment identified in the cluster.  (y,x) shaped.  The end is the highest x-coordinate
+
+    xSegment . . . . .\t x coordinates of the best segment identified in the cluster.  array-like
+    ySegment . . . . .\t y coordinates of the best segment identified in the cluster.  array-like
+
+    [1] Real-time line detection through an improved Hough transform voting scheme, L A.F. Fernandes, M. M. Oliveira.  Pattern Recognition.
     """
     def __init__(self, cluster, max_gap):
         
@@ -180,6 +217,16 @@ class Transition:
         
         self.clusters = clist
         
+        coord = []
+        for u in clist:
+            for i in u.cluster:
+                coord.append(i)
+        coord = np.array(coord)
+        
+        self.coord = coord
+        self.ccx = coord.T[1]
+        self.ccy = coord.T[0]
+
         p0 = []
         p0_x = []
         p0_y = []
@@ -271,12 +318,12 @@ def Slope(angle):
 
 def Linkage(image, gap_size=0, min_cluster_size=4):
     """
-    Returns a list of clusters each containing a minimum number of points separated by at most a specified number of pixels
+    Returns a list of clusters each containing a minimum size with all points separated by at most a specified number of pixels
     
     The last cluster is the ensemble of points that belong to no cluster. (index[-1])
-    Each cluster is an array of coordinates of the form [x, y], assuming that the input image is an array of arrays with the first index corresponding to the x axis.
+    Each cluster is an array of coordinates of the form [y, x], assuming that the input image is an array of arrays with the first index corresponding to the y axis.
     -------
-    image           \t must be a binary image.  Points to be clustered must have a value different than 0.
+    image           \t must be a binary image (array of arrays).  Points to be clustered must have a value different than 0.
     gap_size        \t is the maximum number of pixels separating points that belong to a cluster.  Must be an integer
     min_cluster_size\t is the minimum ammount of points that a group of points must contain in order to be considered as a cluster.  If the group of points does not meet the requirement, they are placed in the left-over category in any order.
     """
@@ -336,15 +383,19 @@ def _next(img, ref, gap_size=0):
             break
     return ret
 
-def _segment_start_stop(x, y, a, b):
+def _segment_start_stop(xx, yy, a, b):
     """
+    Returns the start and end points of a given segment parametrized by (a, b) passing through a cluster of points with coordinates (yy, xx)
     
+    xx \t array-like.  X coordinates of all the points of the cluster
+    yy \t array-like.  Y coordinates of all the points of the cluster
+    a, b \t float.  slope and intercept of the segment for which the end and start points need to be identified
     """
     if a > 0.:
-        xmax = max(x)
-        xmin = min(x)
-        ymax = max(y)
-        ymin = min(y)
+        xmax = max(xx)
+        xmin = min(xx)
+        ymax = max(yy)
+        ymin = min(yy)
         xmax_y = a*xmax+b
         xmin_y = a*xmin+b
         if xmax == xmin:
@@ -363,10 +414,10 @@ def _segment_start_stop(x, y, a, b):
                 xmax = (ymax-b)/a
                 #ymax est bon et ymax_x est le x associé
     elif a < 0.:
-        xmax = max(x)
-        xmin = min(x)
-        ymax = min(y)
-        ymin = max(y)
+        xmax = max(xx)
+        xmin = min(xx)
+        ymax = min(yy)
+        ymin = max(yy)
         xmax_y = a*xmax+b
         xmin_y = a*xmin+b
         if xmax == xmin:
@@ -385,13 +436,19 @@ def _segment_start_stop(x, y, a, b):
                 xmax = (ymax-b)/a
                 #ymax est bon et ymax_x est le x associé
     elif a == 0.:
-        xmax = max(x)
-        xmin = min(x)
+        xmax = max(xx)
+        xmin = min(xx)
         ymax = a*xmax+b
         ymin = ymax.copy()
     return np.array((ymin, xmin)), np.array((ymax, xmax))
 
 def _backrotate(cc, u, v, p0):
+    """
+    Assuming an initial cluster (c) with center p0, directional vector u and its perpendicular vector v that was translated and rotated so that p0=(0,0) and u_y=0, u_x=1 into coordinates cc (of the shape (y,x))
+    _backrotate() will transform the primed referential coordinates, cc, into the initial coordinates, c.
+    
+    returns the (y,x) coordinates of the initial non-primed referential.
+    """
     cpx = np.zeros(cc[0].shape[0], dtype=np.int32)
     cpy = np.zeros(cc[0].shape[0], dtype=np.int32)
     index = np.linspace(0, cc[0].shape[0]-1, cc[0].shape[0], dtype=np.int32)
@@ -403,7 +460,15 @@ def _backrotate(cc, u, v, p0):
 
 def _start_stop(corrx, corry, u, v, p0):
     """
+    Returns the start and end points of a segment that passes through a cluster.
     
+    The coordinates of both these 2 points are the intersect of the smallest window containing the entire cluster and the line passing through p0 along the unitary vector u.
+    
+    corrx \t array-like. X coordinates of all the points of the cluster
+    corry \t array-like. Y coordinates of all the points of the cluster
+    u \t (y, x) coordinates.  Unitary directional vector of the cluster
+    v \t (y, x) coordinates.  Perpendicular vector to u, also unitary.
+    p0 \t euclidian center of the cluster (p0_x = mean(corrx), p0_y = mean(corry))
     """
     index = np.argsort(corrx)
     x0 = corrx[index[0]]
@@ -497,7 +562,7 @@ def _correction_uv(cluster, u, v, p0):
 
 def _ratio(cp):
     """
-    
+    returns the ratio of height/length of a rotated cluster, cp.
     """
     length = max(cp[1])-min(cp[1])
     ratio = (max(cp[0])-min(cp[0])+1)/length
@@ -507,19 +572,23 @@ def _ratio(cp):
 
 def _rho(v, p0):
     """
-    
+    returns the shortest distance to the origin of the line perpendicular to the unitary vector v and passing through p0
     """
     return v[0]*p0[0]+v[1]*p0[1]
 
 def _theta_y(v):
     """
-    
+    returns the angle between the negative y axis and the directional vector u.
+
+    v is the unitary vector perpendicular to the directional vector.
     """
     return np.arccos(v[1])
 
 def _sigma_mp_square(cluster, p0, u):
     """
+    returns the variance of the slope as defined in [1]
     
+    [1] Real-time line detection through an improved Hough transform voting scheme, L A.F. Fernandes, M. M. Oliveira.  Pattern Recognition.
     """
     ss = 0.
     for j in cluster:
@@ -529,13 +598,17 @@ def _sigma_mp_square(cluster, p0, u):
 
 def _sigma_bp_square(n):
     """
+    returns the variance of the intercept as defined in [1]
     
+    [1] Real-time line detection through an improved Hough transform voting scheme, L A.F. Fernandes, M. M. Oliveira.  Pattern Recognition.
     """
     return 1./n
 
 def _matrixM(p0, u, v, sigma_mp_sq, sigma_bp_sq):
     """
+    returns the covariance matrix of the slope-intercept as defined in [1]
     
+    [1] Real-time line detection through an improved Hough transform voting scheme, L A.F. Fernandes, M. M. Oliveira.  Pattern Recognition.
     """
     aa = -u[1]*p0[1]-u[0]*p0[0]
     bb = u[1]/np.sqrt(1-v[1]*v[1])
@@ -548,7 +621,17 @@ def _matrixM(p0, u, v, sigma_mp_sq, sigma_bp_sq):
 
 def _sigmas(p0, u, v, sigma_mp_sq, sigma_bp_sq):
     """
+    returns the covariance matrix terms for rho-theta calculated from the slope-intercept covariance matrix terms.
     
+    p0 \t euclidian center of the cluster.  (y,x) coordinates
+    u \t unitary directional vector.  (y,x) coordinates    
+    v \t unitary perpendicular vector to u.  (y,x) coordinates
+    sigma_mp_sq \t variance of the slope in the slope-intercept covariance matrix
+    sigma_bp_sq \t variance of the intercept in the slope-intercept covariance matrix
+    sigma_mp_bp \t --not included--  the slope-intercept is assumed to be 0, as defined in [1]
+    
+    [1] Real-time line detection through an improved Hough transform voting scheme, L A.F. Fernandes, M. M. Oliveira.  Pattern Recognition.
+
     """
     matrix = _matrixM(p0, u, v, sigma_mp_sq, sigma_bp_sq)
     sigma_rho_sq = 2*2*matrix[0,0]
@@ -561,7 +644,20 @@ def _sigmas(p0, u, v, sigma_mp_sq, sigma_bp_sq):
 
 def Sigmas(cluster, p0, u, v):
     """
+    Computes and returns the covariance matrix terms in the rho-theta basis as defined in [1]
     
+    cluster \t array of (y, x) coordinates of all points that constitute the cluster for which the Hough transform must be computed
+    p0 \t the euclidian center of the cluster
+    u \t the unitary directional vector
+    v \t the unitary vector perpendicular to u
+    
+    returns:
+    sigma_rho_sq \t the variance of the rho coordinate
+    sigma_theta_sq \t the variance of the theta coordinate
+    sigma_rho_theta \t the rho-theta covariance term
+
+    [1] Real-time line detection through an improved Hough transform voting scheme, L A.F. Fernandes, M. M. Oliveira.  Pattern Recognition.
+
     """
     sigma_mp_sq = _sigma_mp_square(cluster, p0, u)
     sigma_bp_sq = _sigma_bp_square(cluster.shape[0])
@@ -570,11 +666,22 @@ def Sigmas(cluster, p0, u, v):
 
 def _split(corrx, corry, u, v, p0, ratio):
     """
-    corrx is an array of the x axis coordinates of all the points part of the cluster.
-    corry is an array of the y axis coordinates of all the points part of the cluster.
-    sPoint is the splitting x-coordinate. If not specified, sPoint=None and will be taken as the maximum distance along the y axis (max(abs(corry)))
+    Splits a cluster of points into 2 clusters if at least one of the 2 subdivisions has a smaller height to length ratio than the initial cluster.
+
+    The _split() function takes the start and end points along the x axis of the cluster and rotates the cluster such that start_y=end_y=0.
+    Afterwards, it tries to split the cluster where abs(y) is maximum and looks if the ratio of either of the 2 subdivisions is smaller than the initial ratio.
+    If so, it returns the 2 clusters.  If both subdivided clusters have a worse ratio than the original's, _split() returns None
+
+    corrx \t array of the x axis coordinates of all the points part of the cluster in the translated/rotated frame such that p0'=(0,0) and u'_x=1 and u'_y=0
+    corry \t array of the y axis coordinates of all the points part of the cluster in the translated/rotated frame such that p0'=(0,0) and u'_x=1 and u'_y=0
+    u \t unitary directional vector of the cluster
+    v \t unitary perpendicular vector to u
+    p0 \t euclidian center of the cluster
+    ratio \t height over length ratio of the cluster that must be split
+
+    For additional information, see [2]
     
-    
+    [2] Three-dimentional object recognition from single two-dimensional images, D. G. Lowe, Artificial Intelligence.
     """
     index = np.argsort(corrx)
     a = (corry[index][-1]-corry[index][0])/(corrx[index][-1]-corrx[index][0])
@@ -628,7 +735,9 @@ def _split(corrx, corry, u, v, p0, ratio):
 
 def _init_guess(cc):
     """
-    
+    returns the indice of the cluster which should be the initial cluster for grouping clusters into forming lines.  If no cluster is good enough, returns None
+
+    cc is an array of clusters.
     """
     ss = np.array(cc).shape[0]
     ss = np.zeros((3, ss))
@@ -650,14 +759,22 @@ def _init_guess(cc):
   
 def _rrel(nSegments, xPixels, yPixels):
     """
+    returns the distance beyond which the proximity of endpoints becomes irrelevant.
+
+    rrel stands for relevant distance.
     
+    nSegments \t number of segments in the image.
+    xPixels \t resolution of the image along the x axis in number of pixels
+    yPixels \t resolution of the image along the y axis in number of pixels
     """
     d = float(nSegments)/float(xPixels*yPixels)
     return 2*np.sqrt(1./(np.pi*d))
     
 def _distance(end1, end2):
     """
+    returns the distance between 2 endpoints of a segment.
     
+    end1, 2 \t (y, x) coordinates of the endpoints
     """
     a = end1[0]-end2[0]
     b = end1[1]-end2[1]
@@ -697,23 +814,34 @@ def _score(theta, s, g, l1):
 
 def Transitions(cc, imgShape):
     """
+    Transitions() regroups clusters that are collinear to eachother into lines.
     
+    cc is an array of Clusters
+    imgShape is the image dimension in number of pixels ((y, x))
+
+    returns a list of Transitions and a list of left-over Clusters.
     """
     nCluster = np.array(cc).shape[0]
     tlist = []
     cc = list(cc)
-    cc2 = deepcopy(cc)
+    leftover = deepcopy(cc[-1])
+    cc2 = deepcopy(cc[:-1])
     next_tran = 0
     while next_tran != None:
         next_tran, cc2 = _next_transition(cc2, nCluster, imgShape)
         if next_tran != None:
             tlist.append(next_tran)
+    cc2.append(leftover)
     #éliminer les transitions de merde et conserver les bonnes
     return tlist, cc2
 
 def _next_transition(cc, nCluster, imgShape):
     """
+    returns the next best-found transition or None if no ensemble of clusters formed a good enough transition.
     
+    cc is an array of all the remaining Clusters
+    nCluster is the number of clusters there were initially
+    imgShape is the image dimension in number of pixels ((y, x))
     """
     index = []
     init_guess_index = _init_guess(cc)
@@ -723,7 +851,6 @@ def _next_transition(cc, nCluster, imgShape):
         index.append(init_guess_index)
         clust = deepcopy(cc[init_guess_index])
         tclust = Transition(clust)
-        #ici on pop cc[init_guess_index]
         ind = init_guess_index
         while ind != None:
             ind = _extend(cc, ind, index, nCluster, imgShape, side="left")
@@ -748,7 +875,9 @@ def _next_transition(cc, nCluster, imgShape):
 
 def _slope_int(p0, p1):
     """
+    returns the slope and intercept of a line passing through both p0 and p1.
     
+    p0, p1 \t (y,x) coordinates of 2 points the line passes through
     """
     a = (p1[0]-p0[0])/(p1[1]-p0[1])
     b = p0[0]-a*p0[1]
@@ -756,7 +885,15 @@ def _slope_int(p0, p1):
     
 def _extend(cc, init_guess_index, indexx, nCluster, imgShape, side):
     """
+    the _extend() function takes an initial cluster and a direction and looks for the best, next collinear cluster in a list of clusters.
+    returns the indice of the next cluster that is collinear within a certain quality to the initial cluster
     
+    cc is an array of Clusters
+    init_guess_index is the indice of the cluster for which we will look for a collinear cluster
+    side is the direction in which we will be looking for the next collinear cluster.  must be "left" or "right"
+    indexx is the indices of all clusters that are already part of the transition being built
+    nCluster is the initial number of clusters identified in the image
+    imgShape is the image dimension in number of pixels ((y, x))
     """
     rel_r = _rrel(nCluster, imgShape[0], imgShape[1])
     ind, r, dtheta = [], [], []
@@ -766,17 +903,17 @@ def _extend(cc, init_guess_index, indexx, nCluster, imgShape, side):
             rr = _distance(i.stop, cc[init_guess_index].start)
         if side == "right":
             rr = _distance(i.start, cc[init_guess_index].stop)
-        if (u not in indexx) and (rr < rel_r): #and (dt < min((cc[init_guess_index].corr_sigma_theta,i.corr_sigma_theta))):
+        if (u not in indexx) and (rr < rel_r): 
             a, b = _slope_int(i.p0, cc[init_guess_index].p0)
             ty = (90.+AngleLineXAxis(a))*np.pi/180.
             dt = abs(cc[init_guess_index].theta_y-i.theta_y)
             if dt >= np.pi/2:
-                if ty < min((cc[init_guess_index].theta_y, i.theta_y))+(10.*np.pi/180) or ty > max((cc[init_guess_index].theta_y, i.theta_y))-(10.*np.pi/180):
+                if ty < min((cc[init_guess_index].theta_y, i.theta_y))+(12.*np.pi/180) or ty > max((cc[init_guess_index].theta_y, i.theta_y))-(12.*np.pi/180):
                     ind.append(u)
                     r.append(rr)
                     dtheta.append(dt)
             else:
-                if ty > min((cc[init_guess_index].theta_y, i.theta_y))-(10.*np.pi/180) and ty < max((cc[init_guess_index].theta_y, i.theta_y))+(10.*np.pi/180):
+                if ty > min((cc[init_guess_index].theta_y, i.theta_y))-(12.*np.pi/180) and ty < max((cc[init_guess_index].theta_y, i.theta_y))+(12.*np.pi/180):
                     ind.append(u)
                     r.append(rr)
                     dtheta.append(dt)
@@ -795,23 +932,6 @@ def _extend(cc, init_guess_index, indexx, nCluster, imgShape, side):
             return None
     except (ValueError):
         return None
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-
-
-
-
 
 #def _kernel(angle, dist, sigma_rho, sigma_theta, sigma_rho_theta, rho, theta_y):
 #    """
