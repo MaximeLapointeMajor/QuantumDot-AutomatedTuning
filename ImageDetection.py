@@ -195,7 +195,24 @@ class Cluster:
 
 class Transition:
     """
+    The transition class is used to regroup Clusters together and identify the position of lines (therefore transitions)
     
+    The __init__ takes a Cluster-class object and a Transition-class object as an input.
+    If the cluster you are adding to the transition is the first, transition must be None.
+    Afterwards, you can expand the transition by adding clusters that belong to that transition by passing the transition object that already exists in addition to the cluster that's being added.
+    
+    Attributes    
+    -----------
+    clusters . . .\t list of Cluster objects that belong to the Transition object
+    coord  . . . .\t array-like. (y, x) coordinates of all the points that belong to this transition
+    ccx, ccy . . .\t array-likes.  x and y coordinates of all the points that belong to this transition
+  
+    p0s  . . . . .\t array-like.  List of all center points of clusters that belong to this transition
+    sStart . . . .\t (y, x) coordinate of the start point of the first cluster
+    sStop  . . . .\t (y, x) coordinate of the end point of the last cluster
+    
+    xSegment . . .\t array-like.  List of x-coordinate of the points that approximate the best the transition.  It is built with (sStart_x, p0s_x, sStop_x)
+    ySegment . . .\t array-like.  List of y-coordinate of the points that approximate the best the transition.  It is built with (sStart_y, p0s_y, sStop_y)
     """
     
     def __init__(self, cluster, transition=None):
@@ -674,9 +691,9 @@ def _split(corrx, corry, u, v, p0, ratio):
 
     corrx \t array of the x axis coordinates of all the points part of the cluster in the translated/rotated frame such that p0'=(0,0) and u'_x=1 and u'_y=0
     corry \t array of the y axis coordinates of all the points part of the cluster in the translated/rotated frame such that p0'=(0,0) and u'_x=1 and u'_y=0
-    u \t unitary directional vector of the cluster
-    v \t unitary perpendicular vector to u
-    p0 \t euclidian center of the cluster
+    u \t\t unitary directional vector of the cluster
+    v \t\t unitary perpendicular vector to u
+    p0 \t\t euclidian center of the cluster
     ratio \t height over length ratio of the cluster that must be split
 
     For additional information, see [2]
@@ -806,11 +823,26 @@ def _collinearity(theta, s, g, l1):
     """
     return 4*theta*s*(g+l1)/(np.pi*l1*l1)
 
-def _score(theta, s, g, l1):
+def _score(cref, cext, side):
     """
     
     """
-    return _collinearity(theta, s, g, l1)
+    if side == "left":
+        s = _distance(cref.start, cext.stop)
+    elif side == "right":    
+        s = _distance(cref.stop, cext.start)
+    g = _perpendicular_dist(cref.slope, cref.intercept, cext.p0)
+    l1 = cext.length
+    dtheta = abs(cref.theta_y-cext.theta_y)
+    sigma_t = min((cref.corr_sigma_theta, cext.corr_sigma_theta))
+    score = _collinearity(dtheta, s, g, l1)
+    if sigma_t != 0.:
+        corr = dtheta/sigma_t
+    else:
+        corr = 10.
+    if corr > 1.:
+        score = score*corr
+    return score
 
 def Transitions(cc, imgShape):
     """
@@ -896,7 +928,7 @@ def _extend(cc, init_guess_index, indexx, nCluster, imgShape, side):
     imgShape is the image dimension in number of pixels ((y, x))
     """
     rel_r = _rrel(nCluster, imgShape[0], imgShape[1])
-    ind, r, dtheta = [], [], []
+    ind = []
     cc = np.array(cc)
     for u, i in enumerate(cc):
         if side == "left":
@@ -910,20 +942,14 @@ def _extend(cc, init_guess_index, indexx, nCluster, imgShape, side):
             if dt >= np.pi/2:
                 if ty < min((cc[init_guess_index].theta_y, i.theta_y))+(12.*np.pi/180) or ty > max((cc[init_guess_index].theta_y, i.theta_y))-(12.*np.pi/180):
                     ind.append(u)
-                    r.append(rr)
-                    dtheta.append(dt)
             else:
                 if ty > min((cc[init_guess_index].theta_y, i.theta_y))-(12.*np.pi/180) and ty < max((cc[init_guess_index].theta_y, i.theta_y))+(12.*np.pi/180):
                     ind.append(u)
-                    r.append(rr)
-                    dtheta.append(dt)
     cc = list(cc)
-    ind, r, dtheta = np.array(ind), np.array(r), np.array(dtheta)
-    s, collin, score = np.zeros(ind.shape[0]), np.zeros(ind.shape[0]), np.zeros(ind.shape[0])
+    ind = np.array(ind)
+    score = np.zeros(ind.shape[0])
     for u, i in enumerate(ind):
-        s[u] = _perpendicular_dist(cc[init_guess_index].slope, cc[init_guess_index].intercept, cc[i].p0)
-        collin[u] = _collinearity(dtheta[u], s[u], r[u], cc[i].length)
-        score[u] = _score(dtheta[u], s[u], r[u], cc[i].length)
+        score[u] = _score(cc[init_guess_index], cc[i], side)
     try:
         if min(score) <= 1.:
             best = np.argmin(score)
