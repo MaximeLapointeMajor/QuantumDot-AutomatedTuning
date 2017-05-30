@@ -394,7 +394,16 @@ def _next(img, ref, gap_size=0):
     If none of the points around the reference are non-zero, the function returns None.
     """
     ret = None
-    for i in product((np.arange(ref[0]-gap_size-1, ref[0]+gap_size+2, 1))%img.shape[0], (np.arange(ref[1]-gap_size-1, ref[1]+gap_size+2, 1))%img.shape[1]):
+    xmin, xmax, ymin, ymax = 1, 1, 1, 1
+    if ref[0] < img.shape[0]:
+        xmax = 0
+    if ref[0] > 0:
+        xmin = 0
+    if ref[1] < img.shape[1]:
+        ymax = 0
+    if ref[1] > 0:
+        ymin = 0
+    for i in product((np.arange(ref[0]-gap_size-1+xmin, ref[0]+gap_size+2-xmax, 1))%img.shape[0], (np.arange(ref[1]-gap_size-1+ymin, ref[1]+gap_size+2-ymax, 1))%img.shape[1]):
         if img[i[0], i[1]]!=0.:
             ret = list(i)
             break
@@ -754,6 +763,8 @@ def _init_guess(cc):
     """
     returns the indice of the cluster which should be the initial cluster for grouping clusters into forming lines.  If no cluster is good enough, returns None
 
+    The "best" cluster is the longest with an incertainty on theta_y smaller than pi/8
+
     cc is an array of clusters.
     """
     ss = np.array(cc).shape[0]
@@ -825,7 +836,15 @@ def _collinearity(theta, s, g, l1):
 
 def _score(cref, cext, side):
     """
+    Gives a score to how likely 2 clusters are apart of the same transition.
     
+    The function calculates the collinearity factor as presented in [2] and penalizes if the angle of both clusters are not within the smallest incertainty of the 2
+    
+    cref is the reference cluster that is already in the transition and from which the algorithm is attempting to extend the transition line
+    cext is the potential extension cluster.  
+    side must be "left" or "right".  It is the side on which cext is from cref.
+
+    [2] Three-dimentional object recognition from single two-dimensional images, D. G. Lowe, Artificial Intelligence.
     """
     if side == "left":
         s = _distance(cref.start, cext.stop)
@@ -941,10 +960,16 @@ def _extend(cc, init_guess_index, indexx, nCluster, imgShape, side):
             dt = abs(cc[init_guess_index].theta_y-i.theta_y)
             if dt >= np.pi/2:
                 if ty < min((cc[init_guess_index].theta_y, i.theta_y))+(12.*np.pi/180) or ty > max((cc[init_guess_index].theta_y, i.theta_y))-(12.*np.pi/180):
-                    ind.append(u)
+                    if side == "left" and (cc[init_guess_index].start_y > cc[u].p0_y):
+                        ind.append(u)
+                    elif side == "right" and (cc[init_guess_index].stop_y < cc[u].p0_y):
+                        ind.append(u)
             else:
                 if ty > min((cc[init_guess_index].theta_y, i.theta_y))-(12.*np.pi/180) and ty < max((cc[init_guess_index].theta_y, i.theta_y))+(12.*np.pi/180):
-                    ind.append(u)
+                    if side == "left" and (cc[init_guess_index].start_y > cc[u].p0_y):
+                        ind.append(u)
+                    elif side == "right" and (cc[init_guess_index].stop_y < cc[u].p0_y):
+                        ind.append(u)
     cc = list(cc)
     ind = np.array(ind)
     score = np.zeros(ind.shape[0])
