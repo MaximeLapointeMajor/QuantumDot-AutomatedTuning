@@ -6,15 +6,149 @@ Created on Thu Jul 28 10:45:21 2016
 """
 
 import numpy as np
-from scipy.optimize import curve_fit
+#from scipy.optimize import curve_fit
 from scipy import signal
 import sys
-sys.path.append('C:\Codes\pyHegel\pyHegel')
+sys.path.append('C:\Codes\pyHegel')
 import derivative as dv
 import peakdetect as pd
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import lmfit as lmf
+from copy import deepcopy
 
+
+class ProcessedSignal:
+    def __init__(self, XData, YData, ZData, Nanofile=None, acqIndex=None):
+        if Nanofile == None:
+            self.XData = XData
+            self.YData = YData
+        
+        if Nanofile != None:
+            if acqIndex == None:
+                self.AcqIndex = 0
+            else:
+                self.AcqIndex = acqIndex
+            self._Nanofile = Nanofile
+            YData = Nanofile.YData
+            XData = Nanofile.XData
+            self.YName = Nanofile.YName
+            self.YUnit = Nanofile.YUnit
+            self.YStart = Nanofile.YStart
+            self.YStop = Nanofile.YStop
+            self.YNPoints = Nanofile.YNPoints
+            self.YData = YData
+            self.XName = Nanofile.XName
+            self.XUnit = Nanofile.XUnit
+            self.XStart = Nanofile.XStart
+            self.XStop = Nanofile.XStop
+            self.XNPoints = Nanofile.XNPoints
+            self.XData = XData
+            self.Filename = Nanofile.Filename
+            self.Extension = Nanofile.Extension
+            self.NAcqChan = Nanofile.NAcqChan
+            self.AcqName = Nanofile.AcqName
+            self.AcqUnit = Nanofile.AcqUnit
+            self.Data = Nanofile.Data
+            self.MeasType = Nanofile.MeasType
+        
+        Filtered = PassFilter2D(XData, ZData)
+        Phase = Phase2D(Filtered)
+        Derivative = Derivate2D(XData, Phase)
+        Transition = Transition2D(XData, YData, Derivative, tresh_axis='xy', tresh='background', sigma1=.6, sigma2=1.)
+        Transition = Borders(Transition, 5)
+
+        def _createDiagram(self, ZData, DataType):
+            return ProcessedSignal._Diagram(ZData, DataType, self)
+
+        self.ZData = _createDiagram(self, ZData, "original")
+        self.Filtered = _createDiagram(self, Filtered, "filtered")
+        self.Phase = _createDiagram(self, Phase, "phase")
+        self.Derivative = _createDiagram(self, Derivative, "derivative")
+        self.Transition = _createDiagram(self, Transition, "transition")
+
+    class _Diagram:
+        def __init__(self, ZData, DataType, ProSignal):
+            self.ZData = ZData
+            self._DataType = DataType
+            self._ProSignal = ProSignal
+        
+        def plot(self, color = cm.bone, colorbar = False):
+            plt.clf()
+            plt.imshow(self.ZData, aspect = 'auto', cmap = color, extent=(self._ProSignal.XData.min(), self._ProSignal.XData.max(), self._ProSignal.YData.min(), self._ProSignal.YData.max()))
+            plt.ylabel("%(yname)s (%(yunit)s)" %{"yname":self._ProSignal.YName, "yunit":self._ProSignal.YUnit})
+            plt.xlabel("%(xname)s (%(xunit)s)" %{"xname":self._ProSignal.XName, "xunit":self._ProSignal.XUnit})
+            plt.title("%(filen)s -%(dset)s - %(zname)s (%(zunit)s)" %{"filen":self._ProSignal.Filename, "dset":self._DataType, "zname":self._ProSignal.AcqName[0][self._ProSignal.AcqIndex], "zunit":self._ProSignal.AcqUnit[0][self._ProSignal.AcqIndex]})
+            if colorbar == True:
+                plt.colorbar()
+
+        def totxt(self, XAxis=False, fmt = '%.5e'):
+            if self._DataType == "transition":
+                fmt = '%.1i'
+            np.savetxt("%(fname)s - %(dtype)s.txt" %{"fname":self._ProSignal.Filename, "dtype":self._DataType}, self.ZData, fmt = fmt)
+            
+        def copy(self):
+            return deepcopy(self)           
+            
+        def maxmin(self, plot=False, minimum=None, maximum=None):
+            diag = self.copy()
+            for u, i in enumerate(diag.ZData):
+                for j, k in enumerate(i):
+                    if minimum != None and k < minimum:
+                        diag.ZData[u][j] = minimum
+                    if maximum != None and k > maximum:
+                        diag.ZData[u][j] = maximum
+            if plot == True:
+                plt.clf()
+                diag.plot(colorbar=True)
+            return diag
+
+    def datacutter(self, plot=False, xstart=None, xstop=None, ystart=None, ystop=None):
+        cut = deepcopy(self._Nanofile)
+        if self.XStart < self.XStop:
+            xmax_ind = sum(1 for i in abs(cut.XData) if i > abs(xstop))
+            xmin_ind = sum(1 for i in abs(cut.XData) if i < abs(xstart))
+            cut.XData = cut.XData[xmin_ind:][:cut.XNPoints-xmin_ind-xmax_ind]
+            cut.Data = np.zeros((cut.NAcqChan, cut.YNPoints, cut.XNPoints-xmax_ind-xmin_ind))
+            for u, i in enumerate(self.Data):
+                cut.Data[u] = i.T[xmin_ind:][:cut.XNPoints-xmin_ind-xmax_ind].T
+        else:
+            xmax_ind = sum(1 for i in abs(cut.XData) if i > abs(xstop))
+            xmin_ind = sum(1 for i in abs(cut.XData) if i < abs(xstart))
+            cut.XData = cut.XData[xmax_ind:][:cut.XNPoints-xmin_ind-xmax_ind]
+            cut.Data = np.zeros((cut.NAcqChan, cut.YNPoints, cut.XNPoints-xmax_ind-xmin_ind))
+            for u, i in enumerate(self.Data):
+                cut.Data[u] = i.T[xmax_ind:][:cut.XNPoints-xmin_ind-xmax_ind].T
+        cut.XNPoints, cut.XStart, cut.XStop = cut.XData.size, cut.XData[0], cut.XData[-1]
+        if self.YStart < self.YStop:
+            ymax_ind = sum(1 for i in abs(cut.YData) if i > abs(ystop))
+            ymin_ind = sum(1 for i in abs(cut.YData) if i < abs(ystart))
+            cut.YData = cut.YData[ymin_ind:][:cut.YNPoints-ymin_ind-ymax_ind]
+            cut2 = deepcopy(cut)
+            cut.Data = np.zeros((cut2.NAcqChan, cut2.YNPoints-ymax_ind-ymin_ind, cut2.XNPoints))
+            for u, i in enumerate(cut2.Data):
+                cut.Data[u] = i[ymin_ind:][:cut2.YNPoints-ymin_ind-ymax_ind]
+        else:
+            ymax_ind = sum(1 for i in abs(cut.YData) if i > abs(ystop))
+            ymin_ind = sum(1 for i in abs(cut.YData) if i < abs(ystart))
+            cut.YData = cut.YData[ymax_ind:][:cut.YNPoints-ymin_ind-ymax_ind]
+            cut2 = deepcopy(cut)
+            cut.Data = np.zeros((cut2.NAcqChan, cut2.YNPoints-ymax_ind-ymin_ind, cut2.XNPoints))
+            for u, i in enumerate(cut2.Data):
+                cut.Data[u] = i[ymax_ind:][:cut2.YNPoints-ymin_ind-ymax_ind]
+        cut.YNPoints, cut.YStart, cut.YStop = cut.YData.size, cut.YData[0], cut.YData[-1]
+        if plot == True:
+            plt.figure()
+            cut.plot()
+        return ProcessedSignal(cut.XData, cut.YData, cut.Data[self.AcqIndex], cut, self.AcqIndex)
+
+    def copy(self):
+        return deepcopy(self)                       
+
+
+
+
+            
 def Reshape(xdata, ydata, zdata):
     """
     Takes the arrays in the format output by the NanonisTramea and returns an array for the x and y axis and an array of arrays for z.
@@ -105,20 +239,31 @@ def _cutoff(xdata, ydata, btype, fs):
         lmod.make_params()
         lmod.set_param_hint('A0', value=max(tdf)/2., min=0.)
         lmod.set_param_hint('A1', value=max(tdf), min=0.)
-        lmod.set_param_hint('gamma0', value=1., min=0., expr='-delta-3*gamma1+x0')
         lmod.set_param_hint('gamma1', value=1., min=0.)
         lmod.set_param_hint('x0', value=25., min=0.)
         lmod.set_param_hint('x1', value=0.)
-        lmod.set_param_hint('delta', value=10., min=0.)
+        lmod.set_param_hint('delta', value=20., min=0.)
+        lmod.set_param_hint('gamma0', value=1., min=0., expr='-delta-3*gamma1+x0')
         result = lmod.fit(tdf[index], x=freq[index])
+#        print result.values.get('x0')-result.values.get('gamma0')
+        tdf2 = tdf-lor(freq, 0., result.values.get('x0'), result.values.get('gamma0'), result.values.get('A1'), result.values.get('x1'), result.values.get('gamma1'), result.values.get('delta'))
+        def lor2(x, A0, x0, gamma0, delta):
+            return A0*(1/np.pi)*(gamma0/2)/((x-x0)**2+(gamma0/2)**2)+A0*(1/np.pi)*(gamma0/2)/((x+x0)**2+(gamma0/2)**2)
+        lmod2 = lmf.Model(lor2)
+        lmod2.make_params()
+        lmod2.set_param_hint('A0', value=max(tdf2), min=0.)
+        lmod2.set_param_hint('x0', value=25., min=0.)
+        lmod2.set_param_hint('delta', value=(25.-3.5*result.values.get('gamma1')), min=0.)
+        lmod2.set_param_hint('gamma0', value=1., min=0., expr='-delta-3*%f+x0'%result.values.get('gamma1'))
+        result2 = lmod2.fit(tdf2[index], x=freq[index])
+#        print result2.values.get('x0')-result2.values.get('gamma0')
         if btype=='high':
-            print result.values.get('x0')-result.values.get('gamma0')
-            if result.values.get('x0')-1.5*result.values.get('gamma0') > 3*result.values.get('gamma1')*3:
-                return result.values.get('x0')-1.5*result.values.get('gamma0')
+            if result2.values.get('x0')-result2.values.get('gamma0') > 3*result.values.get('gamma1'):
+                return result2.values.get('x0')-result2.values.get('gamma0')
             else:
-                return result.values.get('x0')-result.values.get('gamma0')
+                return 3*result.values.get('gamma1')
         elif btype=='low':
-            return result.values.get('x0')+result.values.get('gamma0')
+            return result2.values.get('x0')+result2.values.get('gamma0')
     except Exception:
         pass
     finally:
@@ -331,6 +476,9 @@ def PeakSpacing(xdata, ydata, lookahead=20, delta=0, sigma=None, smooth=None, k=
     k is the spline order.  Default is 3 for cubic.  (1 <= k <= 5)
     n is the derivative.  Default is to fit the raw data, therefore no derivative is calculated.  (n <= k)
     
+    (len(y)-sqrt(2*len(y)))*std**2 <= s <= (len(y)+sqrt(2*len(y)))*std**2
+    where std is the standard error of the noise you want to smooth out of your data.
+    
     The peak detection uses the peakdetect.peakdetect function.  It requires the x and y axis arrays.
     lookahead is the distance to look ahead from a peak candidate to determine if it is an actual peak
     delta specifies a minimum difference between a peak and the following points, before a peak may be considered a peak.  May be usefull for noisy signals
@@ -410,22 +558,22 @@ def Hamming(data):
 #    vardata = np.mean(vardata[(int(.05*N)):(int(.9*N))])
 #    return N*vardata
 #
-#def _adjacentvariance(data,nPoints=40):
-#    """
-#    Calculates the variance of each point of an array with the nPoints on both sides of each point.
-#    """
-#    N = data.shape[0]
-#    vardata = np.zeros_like(data)
-#    for u, i in enumerate(data):
-#        if u<nPoints:
-#            vardata[u] = np.var(data[:(u*2+1)])
-#        elif ((N-u)<nPoints):
-#            vardata[u] = np.var(data[-(N*2-u*2-1):])
-#        else:
-#            temp = data[:(u+1+nPoints)]
-#            temp = temp[-(1+2*nPoints):]
-#            vardata[u] = np.var(temp)
-#    return vardata
+def _adjacentvariance(data,nPoints=40):
+    """
+    Calculates the variance of each point of an array with the nPoints on both sides of each point.
+    """
+    N = data.shape[0]
+    vardata = np.zeros_like(data)
+    for u, i in enumerate(data):
+        if u<nPoints:
+           vardata[u] = np.var(data[:(u*2+1)])
+        elif ((N-u)<nPoints):
+            vardata[u] = np.var(data[-(N*2-u*2-1):])
+        else:
+            temp = data[:(u+1+nPoints)]
+            temp = temp[-(1+2*nPoints):]
+            vardata[u] = np.var(temp)
+    return vardata
 #
 #def Sensitivity(xdata, ydata):
 #    nPoints = int(ydata.shape[0])*.1
