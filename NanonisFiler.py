@@ -18,8 +18,8 @@ class Nanofile:
     def __init__(self, filename, extension, path=None):
         if path != None:
             ph.make_dir("%s"%path)
-        self.Filename = filename
-        self.Extension = extension
+        self.filename = filename
+        self.extension = extension
         f = open("%(fname)s.%(ext)s"%{"fname":filename, "ext":extension})
         try:
             for line in f:
@@ -31,7 +31,7 @@ class Nanofile:
                     mType = "3D sweep"
         finally:
             f.close()
-        self.MeasType = mType
+        self.measType = mType
         f = open("%(fname)s.%(ext)s"%{"fname":filename, "ext":extension})
         try:
             for line in f:
@@ -43,24 +43,24 @@ class Nanofile:
                     xName, xUnit = string.split(xAxis, "(")
                     xName = string.rstrip(xName, " ")
                     xUnit = string.rstrip(xUnit, ")")
-                    self.XName = xName
-                    self.XUnit = xUnit
+                    self.xName = xName
+                    self.xUnit = xUnit
                 elif np.any("Sweep channel: Start" in line):
                     xStart = string.lstrip(line, "Sweep channel: Start\t")
                     xStart = string.rstrip(xStart,"\t\n")
                     xStart = float(xStart)
-                    self.XStart = xStart
+                    self.xStart = xStart
                 elif np.any("Sweep channel: Stop" in line):
                     xStop = string.lstrip(line, "Sweep channel: Stop\t")
                     xStop = string.rstrip(xStop,"\t\n")
                     xStop = float(xStop)
-                    self.XStop = xStop
+                    self.xStop = xStop
                 elif np.any("Sweep channel: Points" in line):
                     xNPoints = string.lstrip(line, "Sweep channel: Points\t")
                     xNPoints = string.rstrip(xNPoints,"\t\n")
                     xNPoints = int(float(xNPoints))
-                    self.XNPoints = xNPoints
-                    self.XData = np.linspace(xStart, xStop, xNPoints)
+                    self.xNPoints = xNPoints
+                    self.xData = np.linspace(xStart, xStop, xNPoints)
                 elif np.any("Acquire channels" in line):
                     Chans = string.lstrip(line,"Acquire channels\t")
                     Chans = string.rstrip(Chans,"\t\n")
@@ -73,9 +73,9 @@ class Nanofile:
                     for u, i in enumerate(unit):
                         unit[u] = string.rstrip(i, ")")
                     nAcqChan = np.array(name).shape[0]
-                    self.NAcqChan = nAcqChan
-                    self.AcqName = np.array(name)
-                    self.AcqUnit = np.array(unit)
+                    self.nAcqChan = nAcqChan
+                    self.acqName = np.array(name)
+                    self.acqUnit = np.array(unit)
                 if mType == "1D sweep":
                     raise NotImplementedError #need to fill the yAxis data + name + unit
                 elif mType != "1D sweep":
@@ -85,24 +85,24 @@ class Nanofile:
                         yName, yUnit = string.split(yAxis, "(")
                         yName = string.rstrip(yName, " ")
                         yUnit = string.rstrip(yUnit, ")")
-                        self.YName = yName
-                        self.YUnit = yUnit
+                        self.yName = yName
+                        self.yUnit = yUnit
                     elif np.any("Step channel 1: Start" in line):
                         yStart = string.lstrip(string.lstrip(string.lstrip(line, "Step channel "), "1"), ": Start\t")
                         yStart = string.rstrip(yStart,"\t\n")
                         yStart = float(yStart)
-                        self.YStart = yStart
+                        self.yStart = yStart
                     elif np.any("Step channel 1: Stop" in line):
                         yStop = string.lstrip(string.lstrip(string.lstrip(line, "Step channel "), "1"), ": Stop\t")
                         yStop = string.rstrip(yStop,"\t\n")
                         yStop = float(yStop)
-                        self.YStop = yStop
+                        self.yStop = yStop
                     elif np.any("Step channel 1: Points" in line):
                         yNPoints = string.lstrip(string.lstrip(string.lstrip(line, "Step channel "), "1"), ": Points\t")
                         yNPoints = string.rstrip(yNPoints,"\t\n")
                         yNPoints = int(float(yNPoints))
-                        self.YNPoints = yNPoints
-                        self.YData = np.linspace(yStart, yStop, yNPoints)
+                        self.yNPoints = yNPoints
+                        self.yData = np.linspace(yStart, yStop, yNPoints)
                     if mType != "2D sweep":
                         raise NotImplementedError
         finally:
@@ -124,51 +124,54 @@ class Nanofile:
                     for j, k in enumerate(i):
                         data2[u][-j-1] = data[u][j]
                 data = deepcopy(data2)
-            self.Data = data
+                self._yFlip = True
+            else:
+                self._yFlip = False
+            self.data = data
     
     def plot(self, acqIndex=0,  color = cm.bone, colorbar = False):
         plt.clf()
-        plt.imshow(self.Data[acqIndex], aspect = 'auto', cmap = color, extent=(self.XData.min(), self.XData.max(), self.YData.min(), self.YData.max()))
-        plt.ylabel("%(yname)s (%(yunit)s)" %{"yname":self.YName, "yunit":self.YUnit})
-        plt.xlabel("%(xname)s (%(xunit)s)" %{"xname":self.XName, "xunit":self.XUnit})
-        plt.title("%(filen)s -%(dset)s - %(zname)s (%(zunit)s)" %{"filen":self.Filename, "dset":"original", "zname":self.AcqName[0][acqIndex], "zunit":self.AcqUnit[0][acqIndex]})
+        plt.imshow(self.data[acqIndex], aspect = 'auto', cmap = color, extent=(self.xData.min(), self.xData.max(), self.yData.min(), self.yData.max()))
+        plt.ylabel("%(yname)s (%(yunit)s)" %{"yname":self.yName, "yunit":self.yUnit})
+        plt.xlabel("%(xname)s (%(xunit)s)" %{"xname":self.xName, "xunit":self.xUnit})
+        plt.title("%(filen)s -%(dset)s - %(zname)s (%(zunit)s)" %{"filen":self.filename, "dset":"original", "zname":self.acqName[0][acqIndex], "zunit":self.acqUnit[0][acqIndex]})
         if colorbar == True:
             plt.colorbar()
 
     def datacutter(self, plot=False, xstart=None, xstop=None, ystart=None, ystop=None):
         cut = deepcopy(self)
-        if self.XStart < self.XStop:
-            xmax_ind = sum(1 for i in abs(cut.XData) if i > abs(xstop))
-            xmin_ind = sum(1 for i in abs(cut.XData) if i < abs(xstart))
-            cut.XData = cut.XData[xmin_ind:][:cut.XNPoints-xmin_ind-xmax_ind]
-            cut.Data = np.zeros((cut.nAcqChan, cut.yNPoints, cut.xNPoints-xmax_ind-xmin_ind))
-            for u, i in enumerate(self.Data):
-                cut.Data[u] = i.T[xmin_ind:][:cut.XNPoints-xmin_ind-xmax_ind].T
+        if self.xStart < self.xStop:
+            xmax_ind = sum(1 for i in abs(cut.xData) if i > abs(xstop))
+            xmin_ind = sum(1 for i in abs(cut.xData) if i < abs(xstart))
+            cut.xData = cut.xData[xmin_ind:][:cut.xNPoints-xmin_ind-xmax_ind]
+            cut.data = np.zeros((cut.nAcqChan, cut.yNPoints, cut.xNPoints-xmax_ind-xmin_ind))
+            for u, i in enumerate(self.data):
+                cut.data[u] = i.T[xmin_ind:][:cut.xNPoints-xmin_ind-xmax_ind].T
         else:
-            xmax_ind = sum(1 for i in abs(cut.XData) if i > abs(xstop))
-            xmin_ind = sum(1 for i in abs(cut.XData) if i < abs(xstart))
-            cut.XData = cut.XData[xmax_ind:][:cut.XNPoints-xmin_ind-xmax_ind]
-            cut.Data = np.zeros((cut.NAcqChan, cut.YNPoints, cut.XNPoints-xmax_ind-xmin_ind))
-            for u, i in enumerate(self.Data):
-                cut.Data[u] = i.T[xmax_ind:][:cut.XNPoints-xmin_ind-xmax_ind].T
-        cut.XNPoints, cut.XStart, cut.XStop = cut.XData.size, cut.XData[0], cut.XData[-1]
-        if self.YStart < self.YStop:
-            ymax_ind = sum(1 for i in abs(cut.YData) if i > abs(ystop))
-            ymin_ind = sum(1 for i in abs(cut.YData) if i < abs(ystart))
-            cut.YData = cut.YData[ymin_ind:][:cut.YNPoints-ymin_ind-ymax_ind]
+            xmax_ind = sum(1 for i in abs(cut.xData) if i > abs(xstop))
+            xmin_ind = sum(1 for i in abs(cut.xData) if i < abs(xstart))
+            cut.xData = cut.xData[xmax_ind:][:cut.xNPoints-xmin_ind-xmax_ind]
+            cut.data = np.zeros((cut.nAcqChan, cut.yNPoints, cut.xNPoints-xmax_ind-xmin_ind))
+            for u, i in enumerate(self.data):
+                cut.data[u] = i.T[xmax_ind:][:cut.xNPoints-xmin_ind-xmax_ind].T
+        cut.xNPoints, cut.xStart, cut.xStop = cut.xData.size, cut.xData[0], cut.xData[-1]
+        if self.yStart < self.yStop:
+            ymax_ind = sum(1 for i in abs(cut.yData) if i > abs(ystop))
+            ymin_ind = sum(1 for i in abs(cut.yData) if i < abs(ystart))
+            cut.yData = cut.yData[ymin_ind:][:cut.yNPoints-ymin_ind-ymax_ind]
             cut2 = deepcopy(cut)
-            cut.Data = np.zeros((cut2.NAcqChan, cut2.YNPoints-ymax_ind-ymin_ind, cut2.XNPoints))
+            cut.data = np.zeros((cut2.nAcqChan, cut2.yNPoints-ymax_ind-ymin_ind, cut2.xNPoints))
             for u, i in enumerate(cut2.Data):
-                cut.Data[u] = i[ymin_ind:][:cut2.YNPoints-ymin_ind-ymax_ind]
+                cut.data[u] = i[ymin_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
         else:
-            ymax_ind = sum(1 for i in abs(cut.YData) if i > abs(ystop))
-            ymin_ind = sum(1 for i in abs(cut.YData) if i < abs(ystart))
-            cut.YData = cut.YData[ymax_ind:][:cut.YNPoints-ymin_ind-ymax_ind]
+            ymax_ind = sum(1 for i in abs(cut.yData) if i > abs(ystop))
+            ymin_ind = sum(1 for i in abs(cut.yData) if i < abs(ystart))
+            cut.yData = cut.yData[ymax_ind:][:cut.yNPoints-ymin_ind-ymax_ind]
             cut2 = deepcopy(cut)
-            cut.Data = np.zeros((cut2.NAcqChan, cut2.YNPoints-ymax_ind-ymin_ind, cut2.XNPoints))
+            cut.data = np.zeros((cut2.nAcqChan, cut2.yNPoints-ymax_ind-ymin_ind, cut2.xNPoints))
             for u, i in enumerate(cut2.Data):
-                cut.Data[u] = i[ymax_ind:][:cut2.YNPoints-ymin_ind-ymax_ind]
-        cut.YNPoints, cut.YStart, cut.YStop = cut.YData.size, cut.YData[0], cut.YData[-1]
+                cut.data[u] = i[ymax_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
+        cut.yNPoints, cut.yStart, cut.yStop = cut.yData.size, cut.yData[0], cut.yData[-1]
         if plot == True:
             plt.figure()
             cut.plot()
