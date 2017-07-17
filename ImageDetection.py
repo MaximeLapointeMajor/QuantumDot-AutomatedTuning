@@ -13,11 +13,11 @@ from itertools import product, izip
 from numpy.linalg import eig
 from copy import deepcopy
 import lmfit as lmf
-
+import matplotlib.pyplot as plt
 
 #from scipy.optimize import curve_fit
 
-class segment:
+class Segment:
     """
     Segment obtained from the Hough Transform of an ensemble of points.
     
@@ -55,6 +55,34 @@ class segment:
             self.y1 = p1[1]
         
         self.theta_x = AngleLineXAxis(self.a)
+
+class ProcessedImage:
+    """
+    
+    """
+    def __init__(self, ProcessedSignal, min_cluster_size = 5, max_gap_size = 0):
+        self.min_cluster_size = min_cluster_size
+        self.max_gap_size = max_gap_size
+        self._proSignal = ProcessedSignal
+
+        cc = Linkage(ProcessedSignal.transition.zData, gap_size = max_gap_size, min_cluster_size = min_cluster_size)
+        cc = Initialization(cc, max_gap = max_gap_size, _proImage = self)
+
+        self.clusters = cc
+
+        self.transitions, self.leftover_clusters = Transitions(cc, (self._proSignal.yNPoints, self._proSignal.xNPoints), self)
+
+    def PlotClusters(self):
+        for u in self.clusters:
+            u.plot()
+
+
+
+    def PlotTransitions(self):
+        for u in self.transitions:
+            u.plot()
+        pass
+
 
 class Cluster:
     """
@@ -97,7 +125,9 @@ class Cluster:
 
     [1] Real-time line detection through an improved Hough transform voting scheme, L A.F. Fernandes, M. M. Oliveira.  Pattern Recognition.
     """
-    def __init__(self, cluster, max_gap):
+    def __init__(self, cluster, max_gap, _proImage = None):
+        if _proImage != None:
+            self._proSignal = _proImage._proSignal
         
         p0, u, v = u_v_(cluster)
         if v[0]<0.:
@@ -111,8 +141,6 @@ class Cluster:
             u = -u
         cp = _rotate(cluster, u, v, p0)
         length, ratio = _ratio(cp)
-#        if u[1]<0.:
-#            u = -u
         nPoints = cluster.T[0].shape[0]
         
 
@@ -136,7 +164,6 @@ class Cluster:
         theta_y = _theta_y(v)
         
         self.rho = rho
-#        self.theta_x = 90.-theta_y
         self.theta_y = theta_y
         
         sigma_rho_sq, sigma_theta_sq, sigma_rho_theta = Sigmas(cluster, p0, u, v)
@@ -193,6 +220,19 @@ class Cluster:
         self.xSegment = xSegment
         self.ySegment = ySegment
 
+    def copy(self):
+        return deepcopy(self)
+
+    def plot(self):
+        if self._proSignal == None:
+            raise NotImplementedError
+        else:
+            if self._proSignal._yFlip == False:
+                plt.plot(self.xSegment/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, self.ySegment/float(self._proSignal.yNPoints-1)*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart, '-')
+            else:
+                plt.plot(self.xSegment/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, self.ySegment/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)+self._proSignal.yStop, '-')
+
+
 class Transition:
     """
     The transition class is used to regroup Clusters together and identify the position of lines (therefore transitions)
@@ -215,7 +255,9 @@ class Transition:
     ySegment . . .\t array-like.  List of y-coordinate of the points that approximate the best the transition.  It is built with (sStart_y, p0s_y, sStop_y)
     """
     
-    def __init__(self, cluster, transition=None):
+    def __init__(self, cluster, transition=None, _proImage = None):
+        if _proImage != None:
+            self._proSignal = _proImage._proSignal
         
         clist = []
         if transition == None:
@@ -276,18 +318,44 @@ class Transition:
             ySegment.append(u)
         ySegment.append(clist[-1].seg_stop_y)
         
-        self.xSegment = xSegment
-        self.ySegment = ySegment
+        self.xSegment = np.array(xSegment)
+        self.ySegment = np.array(ySegment)
         
         self.cStart = clist[0]
         self.cStop = clist[-1]
         
+        mean_theta = []
+        for u in self.clusters:
+            mean_theta.append(u.theta_y)
+        self.mean_theta = np.mean(mean_theta)
+
+    def plot(self):
+        if self._proSignal == None:
+            raise NotImplementedError
+        else:
+            if self._proSignal._yFlip == False:
+                plt.plot(self.xSegment/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, self.ySegment/float(self._proSignal.yNPoints-1)*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart, '-')
+            else:
+                plt.plot(self.xSegment/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, self.ySegment/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)+self._proSignal.yStop, '-')
         
+    def copy(self):
+        return deepcopy(self)
         
+    def linear_fit(self):
+        cx, cy = average_y(self.ccx, self.ccy)
+        model = lmf.models.LinearModel()
+        ret = model.fit(cy, x=cx, slope=1, intercept=0)
+        self.pixel_slope, self.pixel_intercept = ret.values.get('slope'), ret.values.get('intercept')
+        if self._proSignal._yFlip == True:
+            self.slope = self.pixel_slope/(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)*self._proSignal.xNPoints/(self._proSignal.xStop-self._proSignal.xStart)
+            self.intercept = self.pixel_intercept/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)+self._proSignal.yStop-self._proSignal.xStart*self.slope
+        else:
+            self.slope = self.pixel_slope/self._proSignal.yNPoints*(self._proSignal.yStop-self._proSignal.yStart)*self._proSignal.xNPoints/(self._proSignal.xStop-self._proSignal.xStart)
+            self.intercept = self.pixel_intercept/self._proSignal.yNPoints*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart+self._proSignal.xStart*self.slope
+            
 
 
-
-def Initialization(cc, max_gap=0):
+def Initialization(cc, max_gap = 0, _proImage = None):
     """
     
     """
@@ -295,14 +363,17 @@ def Initialization(cc, max_gap=0):
     leftover = cc.pop(-1)
     clust = []
     for u in cc:
-        temp = Cluster(u, max_gap)
+        if _proImage != None:
+            temp = Cluster(u, max_gap, _proImage = _proImage)
+        else:
+            temp = Cluster(u, max_gap)
         ret = _split(temp.corr_x, temp.corr_y, temp.u, temp.v, temp.p0, temp.ratio)
         if ret == None:
             clust.append(temp)
         else:
             cc.append(ret[0])
             cc.append(ret[1])
-    clust.append(Cluster(leftover, max_gap))
+    clust.append(Cluster(leftover, max_gap, _proImage = _proImage))
     return clust
 
 def DistancePointLine(x, y, a, b):
@@ -333,7 +404,7 @@ def Slope(angle):
     return np.tan(angle*np.pi/180.)
 
 
-def Linkage(image, gap_size=0, min_cluster_size=4):
+def Linkage(image, min_cluster_size=4, gap_size=None):
     """
     Returns a list of clusters each containing a minimum size with all points separated by at most a specified number of pixels
     
@@ -348,6 +419,10 @@ def Linkage(image, gap_size=0, min_cluster_size=4):
     leftover = []
     img = image.copy()
     index = np.nonzero(img)
+    if gap_size == None and index[0].shape < 1000: #The constant still needs to be determined.  Perhaps as density of points?
+        gap_size = 1
+    else:
+        gap_size = 0
     while (index[0].shape[0]!=0):
         group = _group(img, ref=list([index[0][0], index[1][0]]), gap_size=gap_size)
         for u in group:
@@ -573,7 +648,7 @@ def _correction_uv(cluster, u, v, p0):
     mod = lmf.models.LinearModel()
     out = mod.fit(cp[0, index], x=cp[1, index])
     slope = out.values.get('slope')
-    theta_y = _theta_y(v)+AngleLineXAxis(slope)*np.pi/180.
+    theta_y = _theta_y(v)+AngleLineXAxis(slope)*np.pi/180. # corrected theta_y + corr to theta_y - corr  as of 20170703
     u[0] = np.cos(theta_y)
     u[1] = -np.sin(theta_y)
     v[1] = u[0].copy()
@@ -796,7 +871,7 @@ def _rrel(nSegments, xPixels, yPixels):
     yPixels \t resolution of the image along the y axis in number of pixels
     """
     d = float(nSegments)/float(xPixels*yPixels)
-    return 2*np.sqrt(1./(np.pi*d))
+    return 1.5*np.sqrt(1./(np.pi*d))
     
 def _distance(end1, end2):
     """
@@ -863,7 +938,7 @@ def _score(cref, cext, side):
         score = score*corr
     return score
 
-def Transitions(cc, imgShape):
+def Transitions(cc, imgShape, _proImage = None):
     """
     Transitions() regroups clusters that are collinear to eachother into lines.
     
@@ -872,21 +947,21 @@ def Transitions(cc, imgShape):
 
     returns a list of Transitions and a list of left-over Clusters.
     """
-    nCluster = np.array(cc).shape[0]
+    nCluster = sum(1 for i in cc if i.corr_sigma_theta <= np.pi/8.)
     tlist = []
     cc = list(cc)
     leftover = deepcopy(cc[-1])
     cc2 = deepcopy(cc[:-1])
     next_tran = 0
     while next_tran != None:
-        next_tran, cc2 = _next_transition(cc2, nCluster, imgShape)
+        next_tran, cc2 = _next_transition(cc2, nCluster, imgShape, _proImage = _proImage)
         if next_tran != None:
             tlist.append(next_tran)
     cc2.append(leftover)
     #éliminer les transitions de merde et conserver les bonnes
     return tlist, cc2
 
-def _next_transition(cc, nCluster, imgShape):
+def _next_transition(cc, nCluster, imgShape, _proImage = None):
     """
     returns the next best-found transition or None if no ensemble of clusters formed a good enough transition.
     
@@ -901,14 +976,14 @@ def _next_transition(cc, nCluster, imgShape):
     else:
         index.append(init_guess_index)
         clust = deepcopy(cc[init_guess_index])
-        tclust = Transition(clust)
+        tclust = Transition(clust, _proImage = _proImage)
         ind = init_guess_index
         while ind != None:
             ind = _extend(cc, ind, index, nCluster, imgShape, side="left")
             if ind != None:
                 index.append(ind)
                 clust = deepcopy(cc[ind])
-                tclust = Transition(clust, tclust)
+                tclust = Transition(clust, tclust, _proImage = _proImage)
         clust = deepcopy(cc[init_guess_index])
         ind = init_guess_index
         while ind != None:
@@ -916,7 +991,7 @@ def _next_transition(cc, nCluster, imgShape):
             if ind != None:
                 index.append(ind)
                 clust = deepcopy(cc[ind])
-                tclust = Transition(clust, tclust)
+                tclust = Transition(clust, tclust, _proImage = _proImage)
         ind = -np.array(index)
         ind = np.argsort(ind)
         cc2 = deepcopy(cc)
@@ -983,6 +1058,26 @@ def _extend(cc, init_guess_index, indexx, nCluster, imgShape, side):
             return None
     except (ValueError):
         return None
+
+def average_y(ccx, ccy):
+    """
+    
+    """
+    cx, cy = [], []
+    for u in ccx:
+        if u not in cx:
+            index = np.where(u==ccx)    
+            cx.append(u)
+            cy.append(sum(ccy[index[0]])/float(index[0].size))
+    return np.array(cx), np.array(cy)
+    
+
+
+
+
+
+
+
 
 #def _kernel(angle, dist, sigma_rho, sigma_theta, sigma_rho_theta, rho, theta_y):
 #    """
