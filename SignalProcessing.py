@@ -19,85 +19,88 @@ from copy import deepcopy
 
 
 class ProcessedSignal:
-    def __init__(self, XData, YData, ZData, Nanofile=None, acqIndex=None):
+    def __init__(self, xData, yData, zData, Nanofile=None, acqIndex=None):
         if Nanofile == None:
-            self.XData = XData
-            self.YData = YData
+            self.xData = xData
+            self.yData = yData
         
         if Nanofile != None:
             if acqIndex == None:
-                self.AcqIndex = 0
+                self.acqIndex = 0
             else:
-                self.AcqIndex = acqIndex
-            self._Nanofile = Nanofile
-            YData = Nanofile.YData
-            XData = Nanofile.XData
-            self.YName = Nanofile.YName
-            self.YUnit = Nanofile.YUnit
-            self.YStart = Nanofile.YStart
-            self.YStop = Nanofile.YStop
-            self.YNPoints = Nanofile.YNPoints
-            self.YData = YData
-            self.XName = Nanofile.XName
-            self.XUnit = Nanofile.XUnit
-            self.XStart = Nanofile.XStart
-            self.XStop = Nanofile.XStop
-            self.XNPoints = Nanofile.XNPoints
-            self.XData = XData
-            self.Filename = Nanofile.Filename
-            self.Extension = Nanofile.Extension
-            self.NAcqChan = Nanofile.NAcqChan
-            self.AcqName = Nanofile.AcqName
-            self.AcqUnit = Nanofile.AcqUnit
-            self.Data = Nanofile.Data
-            self.MeasType = Nanofile.MeasType
+                self.acqIndex = acqIndex
+#            self._Nanofile = Nanofile
+            yData = Nanofile.yData
+            xData = Nanofile.xData
+            self.yName = Nanofile.yName
+            self.yUnit = Nanofile.yUnit
+            self.yStart = Nanofile.yStart
+            self.yStop = Nanofile.yStop
+            self.yNPoints = Nanofile.yNPoints
+            self.yData = yData
+            self.xName = Nanofile.xName
+            self.xUnit = Nanofile.xUnit
+            self.xStart = Nanofile.xStart
+            self.xStop = Nanofile.xStop
+            self.xNPoints = Nanofile.xNPoints
+            self.xData = xData
+            self.filename = Nanofile.filename
+            self.extension = Nanofile.extension
+            self.nAcqChan = Nanofile.nAcqChan
+            self.acqName = Nanofile.acqName
+            self.acqUnit = Nanofile.acqUnit
+            self.data = Nanofile.data
+            self.measType = Nanofile.measType
+            self._yFlip = Nanofile._yFlip
         
-        Filtered = PassFilter2D(XData, ZData)
-        Phase = Phase2D(Filtered)
-        Derivative = Derivate2D(XData, Phase)
-        Transition = Transition2D(XData, YData, Derivative, tresh_axis='xy', tresh='background', sigma1=.6, sigma2=1.)
-        Transition = Borders(Transition, 5)
+        filtered = PassFilter2D(xData, zData)
+        phase = Phase2D(filtered)
+        derivative = Derivate2D(xData, phase)
+        transition = Transition2D(xData, yData, derivative, tresh_axis='xy', tresh='background', sigma1=.6, sigma2=1.)
+        transition = Borders(transition, 5)
 
-        def _createDiagram(self, ZData, DataType):
-            return ProcessedSignal._Diagram(ZData, DataType, self)
+        def _createDiagram(self, zData, dataType):
+            return ProcessedSignal._Diagram(zData, dataType, self)
 
-        self.ZData = _createDiagram(self, ZData, "original")
-        self.Filtered = _createDiagram(self, Filtered, "filtered")
-        self.Phase = _createDiagram(self, Phase, "phase")
-        self.Derivative = _createDiagram(self, Derivative, "derivative")
-        self.Transition = _createDiagram(self, Transition, "transition")
+#        self.zData = _createDiagram(self, zData, "original")
+#        self.filtered = _createDiagram(self, filtered, "filtered")
+#        self.phase = _createDiagram(self, phase, "phase")
+#        self.derivative = _createDiagram(self, derivative, "derivative")
+        self.transition = _createDiagram(self, transition, "transition")
 
     class _Diagram:
-        def __init__(self, ZData, DataType, ProSignal):
-            self.ZData = ZData
-            self._DataType = DataType
+        def __init__(self, zData, dataType, ProSignal):
+            self.zData = zData
+            self._dataType = dataType
             self._ProSignal = ProSignal
         
         def plot(self, color = cm.bone, colorbar = False):
             plt.clf()
-            plt.imshow(self.ZData, aspect = 'auto', cmap = color, extent=(self._ProSignal.XData.min(), self._ProSignal.XData.max(), self._ProSignal.YData.min(), self._ProSignal.YData.max()))
-            plt.ylabel("%(yname)s (%(yunit)s)" %{"yname":self._ProSignal.YName, "yunit":self._ProSignal.YUnit})
-            plt.xlabel("%(xname)s (%(xunit)s)" %{"xname":self._ProSignal.XName, "xunit":self._ProSignal.XUnit})
-            plt.title("%(filen)s -%(dset)s - %(zname)s (%(zunit)s)" %{"filen":self._ProSignal.Filename, "dset":self._DataType, "zname":self._ProSignal.AcqName[0][self._ProSignal.AcqIndex], "zunit":self._ProSignal.AcqUnit[0][self._ProSignal.AcqIndex]})
+            plt.imshow(self.zData, aspect = 'auto', cmap = color, extent=(self._ProSignal.xData.min(), self._ProSignal.xData.max(), self._ProSignal.yData.min(), self._ProSignal.yData.max()))
+            plt.ylabel("%(yname)s (%(yunit)s)" %{"yname":self._ProSignal.yName, "yunit":self._ProSignal.yUnit})
+            plt.xlabel("%(xname)s (%(xunit)s)" %{"xname":self._ProSignal.xName, "xunit":self._ProSignal.xUnit})
+            plt.title("%(filen)s -%(dset)s - %(zname)s (%(zunit)s)" %{"filen":self._ProSignal.filename, "dset":self._dataType, "zname":self._ProSignal.acqName[0][self._ProSignal.acqIndex], "zunit":self._ProSignal.acqUnit[0][self._ProSignal.acqIndex]})
             if colorbar == True:
                 plt.colorbar()
 
-        def totxt(self, XAxis=False, fmt = '%.5e'):
-            if self._DataType == "transition":
+        def totxt(self, xAxis=False, fmt = '%.5e'):
+            if xAxis == True:
+                pass
+            if self._dataType == "transition":
                 fmt = '%.1i'
-            np.savetxt("%(fname)s - %(dtype)s.txt" %{"fname":self._ProSignal.Filename, "dtype":self._DataType}, self.ZData, fmt = fmt)
+            np.savetxt("%(fname)s - %(dtype)s.txt" %{"fname":self._ProSignal.filename, "dtype":self._dataType}, self.zData, fmt = fmt)
             
         def copy(self):
             return deepcopy(self)           
             
         def maxmin(self, plot=False, minimum=None, maximum=None):
             diag = self.copy()
-            for u, i in enumerate(diag.ZData):
+            for u, i in enumerate(diag.zData):
                 for j, k in enumerate(i):
                     if minimum != None and k < minimum:
-                        diag.ZData[u][j] = minimum
+                        diag.zData[u][j] = minimum
                     if maximum != None and k > maximum:
-                        diag.ZData[u][j] = maximum
+                        diag.zData[u][j] = maximum
             if plot == True:
                 plt.clf()
                 diag.plot(colorbar=True)
@@ -105,42 +108,42 @@ class ProcessedSignal:
 
     def datacutter(self, plot=False, xstart=None, xstop=None, ystart=None, ystop=None):
         cut = deepcopy(self._Nanofile)
-        if self.XStart < self.XStop:
-            xmax_ind = sum(1 for i in abs(cut.XData) if i > abs(xstop))
-            xmin_ind = sum(1 for i in abs(cut.XData) if i < abs(xstart))
-            cut.XData = cut.XData[xmin_ind:][:cut.XNPoints-xmin_ind-xmax_ind]
-            cut.Data = np.zeros((cut.NAcqChan, cut.YNPoints, cut.XNPoints-xmax_ind-xmin_ind))
-            for u, i in enumerate(self.Data):
-                cut.Data[u] = i.T[xmin_ind:][:cut.XNPoints-xmin_ind-xmax_ind].T
+        if self.xStart < self.xStop:
+            xmax_ind = sum(1 for i in abs(cut.xData) if i > abs(xstop))
+            xmin_ind = sum(1 for i in abs(cut.xData) if i < abs(xstart))
+            cut.xData = cut.xData[xmin_ind:][:cut.xNPoints-xmin_ind-xmax_ind]
+            cut.data = np.zeros((cut.nAcqChan, cut.yNPoints, cut.xNPoints-xmax_ind-xmin_ind))
+            for u, i in enumerate(self.data):
+                cut.data[u] = i.T[xmin_ind:][:cut.xNPoints-xmin_ind-xmax_ind].T
         else:
-            xmax_ind = sum(1 for i in abs(cut.XData) if i > abs(xstop))
-            xmin_ind = sum(1 for i in abs(cut.XData) if i < abs(xstart))
-            cut.XData = cut.XData[xmax_ind:][:cut.XNPoints-xmin_ind-xmax_ind]
-            cut.Data = np.zeros((cut.NAcqChan, cut.YNPoints, cut.XNPoints-xmax_ind-xmin_ind))
-            for u, i in enumerate(self.Data):
-                cut.Data[u] = i.T[xmax_ind:][:cut.XNPoints-xmin_ind-xmax_ind].T
-        cut.XNPoints, cut.XStart, cut.XStop = cut.XData.size, cut.XData[0], cut.XData[-1]
-        if self.YStart < self.YStop:
-            ymax_ind = sum(1 for i in abs(cut.YData) if i > abs(ystop))
-            ymin_ind = sum(1 for i in abs(cut.YData) if i < abs(ystart))
-            cut.YData = cut.YData[ymin_ind:][:cut.YNPoints-ymin_ind-ymax_ind]
+            xmax_ind = sum(1 for i in abs(cut.xData) if i > abs(xstop))
+            xmin_ind = sum(1 for i in abs(cut.xData) if i < abs(xstart))
+            cut.xData = cut.xData[xmax_ind:][:cut.xNPoints-xmin_ind-xmax_ind]
+            cut.data = np.zeros((cut.nAcqChan, cut.yNPoints, cut.xNPoints-xmax_ind-xmin_ind))
+            for u, i in enumerate(self.data):
+                cut.data[u] = i.T[xmax_ind:][:cut.xNPoints-xmin_ind-xmax_ind].T
+        cut.xNPoints, cut.xStart, cut.xStop = cut.xData.size, cut.xData[0], cut.xData[-1]
+        if self.yStart < self.yStop:
+            ymax_ind = sum(1 for i in abs(cut.yData) if i > abs(ystop))
+            ymin_ind = sum(1 for i in abs(cut.yData) if i < abs(ystart))
+            cut.yData = cut.yData[ymin_ind:][:cut.yNPoints-ymin_ind-ymax_ind]
             cut2 = deepcopy(cut)
-            cut.Data = np.zeros((cut2.NAcqChan, cut2.YNPoints-ymax_ind-ymin_ind, cut2.XNPoints))
-            for u, i in enumerate(cut2.Data):
-                cut.Data[u] = i[ymin_ind:][:cut2.YNPoints-ymin_ind-ymax_ind]
+            cut.data = np.zeros((cut2.nAcqChan, cut2.yNPoints-ymax_ind-ymin_ind, cut2.XNPoints))
+            for u, i in enumerate(cut2.data):
+                cut.data[u] = i[ymin_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
         else:
-            ymax_ind = sum(1 for i in abs(cut.YData) if i > abs(ystop))
-            ymin_ind = sum(1 for i in abs(cut.YData) if i < abs(ystart))
-            cut.YData = cut.YData[ymax_ind:][:cut.YNPoints-ymin_ind-ymax_ind]
+            ymax_ind = sum(1 for i in abs(cut.yData) if i > abs(ystop))
+            ymin_ind = sum(1 for i in abs(cut.yData) if i < abs(ystart))
+            cut.yData = cut.yData[ymax_ind:][:cut.yNPoints-ymin_ind-ymax_ind]
             cut2 = deepcopy(cut)
-            cut.Data = np.zeros((cut2.NAcqChan, cut2.YNPoints-ymax_ind-ymin_ind, cut2.XNPoints))
-            for u, i in enumerate(cut2.Data):
-                cut.Data[u] = i[ymax_ind:][:cut2.YNPoints-ymin_ind-ymax_ind]
-        cut.YNPoints, cut.YStart, cut.YStop = cut.YData.size, cut.YData[0], cut.YData[-1]
+            cut.data = np.zeros((cut2.nAcqChan, cut2.yNPoints-ymax_ind-ymin_ind, cut2.xNPoints))
+            for u, i in enumerate(cut2.data):
+                cut.data[u] = i[ymax_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
+        cut.yNPoints, cut.yStart, cut.yStop = cut.yData.size, cut.yData[0], cut.yData[-1]
         if plot == True:
             plt.figure()
             cut.plot()
-        return ProcessedSignal(cut.XData, cut.YData, cut.Data[self.AcqIndex], cut, self.AcqIndex)
+        return ProcessedSignal(cut.xData, cut.yData, cut.data[self.acqIndex], cut, self.acqIndex)
 
     def copy(self):
         return deepcopy(self)                       
