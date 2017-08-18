@@ -73,15 +73,20 @@ class ProcessedImage:
         self.transitions, self.leftover_clusters = Transitions(cc, (self._proSignal.yNPoints, self._proSignal.xNPoints), self)
 
     def PlotClusters(self):
-        for u in self.clusters:
+        for u in self.clusters[:-1]:
             u.plot()
-
-
 
     def PlotTransitions(self):
         for u in self.transitions:
             u.plot()
-        pass
+
+    def ReorganizeClusters(self):
+        for u, i in enumerate(self.transitions):
+            self.transitions[u] = _reorganize_clusters(i, _proImage=self)
+
+    def copy(self):
+        return deepcopy(self)
+
 
 
 class Cluster:
@@ -150,6 +155,7 @@ class Cluster:
         self.nPoints = cluster.T[0].shape[0]
         self.ratio = ratio
         self.length = length
+        self.height = length*ratio
         self.p0 = p0
         self.u = u
         self.v = v
@@ -353,6 +359,17 @@ class Transition:
             self.slope = self.pixel_slope/self._proSignal.yNPoints*(self._proSignal.yStop-self._proSignal.yStart)*self._proSignal.xNPoints/(self._proSignal.xStop-self._proSignal.xStart)
             self.intercept = self.pixel_intercept/self._proSignal.yNPoints*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart+self._proSignal.xStart*self.slope
             
+def _reorganize_clusters(tran, _proImage=None):
+    p0s = []
+    for u in tran.clusters:
+        p0s.append(u.p0_x)
+    index = np.array(p0s).argsort()
+    tt = tran.copy()
+    tran = Transition(tt.clusters[index[0]], _proImage=_proImage)
+    list(index).pop(0)
+    for u in index:
+        tran = Transition(tt.clusters[u], tran, _proImage=_proImage)
+    return tran
 
 
 def Initialization(cc, max_gap = 0, _proImage = None):
@@ -981,14 +998,25 @@ def _next_transition(cc, nCluster, imgShape, _proImage = None):
         while ind != None:
             ind = _extend(cc, ind, index, nCluster, imgShape, side="left")
             if ind != None:
+                mid_ind = _mid_transitions(cc, index[-1], ind)
+                for u in mid_ind:
+                    index.append(u)
+                    clust = deepcopy(cc[u])
+                    tclust = Transition(clust, tclust, _proImage = _proImage)
                 index.append(ind)
                 clust = deepcopy(cc[ind])
                 tclust = Transition(clust, tclust, _proImage = _proImage)
-        clust = deepcopy(cc[init_guess_index])
+#        clust = deepcopy(cc[init_guess_index])
         ind = init_guess_index
+        index.append(index.pop(0))
         while ind != None:
             ind = _extend(cc, ind, index, nCluster, imgShape, side="right")
             if ind != None:
+                mid_ind = _mid_transitions(cc, index[-1], ind)
+                for u in mid_ind:
+                    index.append(u)
+                    clust = deepcopy(cc[u])
+                    tclust = Transition(clust, tclust, _proImage = _proImage)
                 index.append(ind)
                 clust = deepcopy(cc[ind])
                 tclust = Transition(clust, tclust, _proImage = _proImage)
@@ -998,6 +1026,17 @@ def _next_transition(cc, nCluster, imgShape, _proImage = None):
         for u in ind:
             cc2.pop(index[u])
         return tclust, cc2
+
+def _mid_transitions(cc, ind1, ind2):
+    mid = []
+    a, b = _slope_int(cc[ind1].p0, cc[ind2].p0)
+    p0x_max = max(cc[ind1].p0_x, cc[ind2].p0_x)
+    p0x_min = min(cc[ind1].p0_x, cc[ind2].p0_x)    
+    for u, i in enumerate(cc):
+        d = DistancePointLine(i.p0_x, i.p0_y, a, b)
+        if d < max(cc[ind1].height, cc[ind2].height) and i.p0_x < p0x_max and i.p0_x > p0x_min:
+            mid.append(u)
+    return mid
 
 def _slope_int(p0, p1):
     """
