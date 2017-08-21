@@ -364,12 +364,11 @@ def _reorganize_clusters(tran, _proImage=None):
     for u in tran.clusters:
         p0s.append(u.p0_x)
     index = np.array(p0s).argsort()
-    tt = tran.copy()
-    tran = Transition(tt.clusters[index[0]], _proImage=_proImage)
+    tt = Transition(tran.clusters[index[0]], _proImage=_proImage)
     list(index).pop(0)
     for u in index:
-        tran = Transition(tt.clusters[u], tran, _proImage=_proImage)
-    return tran
+        tt = Transition(tran.clusters[u], tt, _proImage=_proImage)
+    return tt
 
 
 def Initialization(cc, max_gap = 0, _proImage = None):
@@ -967,16 +966,15 @@ def Transitions(cc, imgShape, _proImage = None):
     nCluster = sum(1 for i in cc if i.corr_sigma_theta <= np.pi/8.)
     tlist = []
     cc = list(cc)
-    leftover = deepcopy(cc[-1])
-    cc2 = deepcopy(cc[:-1])
+    leftover = cc.pop(-1)
     next_tran = 0
     while next_tran != None:
-        next_tran, cc2 = _next_transition(cc2, nCluster, imgShape, _proImage = _proImage)
+        next_tran, cc = _next_transition(cc, nCluster, imgShape, _proImage = _proImage)
         if next_tran != None:
             tlist.append(next_tran)
-    cc2.append(leftover)
+    cc.append(leftover)
     #éliminer les transitions de merde et conserver les bonnes
-    return tlist, cc2
+    return tlist, cc
 
 def _next_transition(cc, nCluster, imgShape, _proImage = None):
     """
@@ -992,8 +990,8 @@ def _next_transition(cc, nCluster, imgShape, _proImage = None):
         return None, cc
     else:
         index.append(init_guess_index)
-        clust = deepcopy(cc[init_guess_index])
-        tclust = Transition(clust, _proImage = _proImage)
+#        clust = deepcopy(cc[init_guess_index])
+#        tclust = Transition(clust, _proImage = _proImage)
         ind = init_guess_index
         while ind != None:
             ind = _extend(cc, ind, index, nCluster, imgShape, side="left")
@@ -1001,12 +999,12 @@ def _next_transition(cc, nCluster, imgShape, _proImage = None):
                 mid_ind = _mid_transitions(cc, index[-1], ind)
                 for u in mid_ind:
                     index.append(u)
-                    clust = deepcopy(cc[u])
-                    tclust = Transition(clust, tclust, _proImage = _proImage)
+#                    clust = deepcopy(cc[u])
+#                    tclust = Transition(clust, tclust, _proImage = _proImage)
                 index.append(ind)
-                clust = deepcopy(cc[ind])
-                tclust = Transition(clust, tclust, _proImage = _proImage)
-#        clust = deepcopy(cc[init_guess_index])
+#                clust = deepcopy(cc[ind])
+#                tclust = Transition(clust, tclust, _proImage = _proImage)
+##        clust = deepcopy(cc[init_guess_index])
         ind = init_guess_index
         index.append(index.pop(0))
         while ind != None:
@@ -1015,17 +1013,20 @@ def _next_transition(cc, nCluster, imgShape, _proImage = None):
                 mid_ind = _mid_transitions(cc, index[-1], ind)
                 for u in mid_ind:
                     index.append(u)
-                    clust = deepcopy(cc[u])
-                    tclust = Transition(clust, tclust, _proImage = _proImage)
+#                    clust = deepcopy(cc[u])
+#                    tclust = Transition(clust, tclust, _proImage = _proImage)
                 index.append(ind)
-                clust = deepcopy(cc[ind])
-                tclust = Transition(clust, tclust, _proImage = _proImage)
+#                clust = deepcopy(cc[ind])
+#                tclust = Transition(clust, tclust, _proImage = _proImage)
         ind = -np.array(index)
         ind = np.argsort(ind)
-        cc2 = deepcopy(cc)
-        for u in ind:
-            cc2.pop(index[u])
-        return tclust, cc2
+#        cc2 = deepcopy(cc)
+#        for u in ind:
+#            cc2.pop(index[u])
+        tclust = Transition(cc.pop(index[ind[0]]), _proImage = _proImage)
+        for u in ind[1:]:
+            tclust = Transition(cc.pop(index[u]), tclust, _proImage = _proImage)
+        return tclust, cc
 
 def _mid_transitions(cc, ind1, ind2):
     mid = []
