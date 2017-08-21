@@ -62,10 +62,10 @@ class ProcessedSignal:
         def _createDiagram(self, zData, dataType):
             return ProcessedSignal._Diagram(zData, dataType, self)
 
-#        self.zData = _createDiagram(self, zData, "original")
-#        self.filtered = _createDiagram(self, filtered, "filtered")
-#        self.phase = _createDiagram(self, phase, "phase")
-#        self.derivative = _createDiagram(self, derivative, "derivative")
+        self.zData = _createDiagram(self, zData, "original")
+        self.filtered = _createDiagram(self, filtered, "filtered")
+        self.phase = _createDiagram(self, phase, "phase")
+        self.derivative = _createDiagram(self, derivative, "derivative")
         self.transition = _createDiagram(self, transition, "transition")
 
     class _Diagram:
