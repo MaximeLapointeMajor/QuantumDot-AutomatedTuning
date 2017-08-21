@@ -70,7 +70,7 @@ class ProcessedImage:
 
         self.clusters = cc
 
-        self.transitions, self.leftover_clusters = Transitions(cc, (self._proSignal.yNPoints, self._proSignal.xNPoints), self)
+        self.transitions, self.leftover_clusters = Transitions(cc, (self._proSignal.yNPoints, self._proSignal.xNPoints), _proImage = self)
 
     def PlotClusters(self):
         for u in self.clusters[:-1]:
