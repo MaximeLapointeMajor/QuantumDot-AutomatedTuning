@@ -72,6 +72,9 @@ class ProcessedImage:
 
         self.transitions, self.leftover_clusters = Transitions(cc, (self._proSignal.yNPoints, self._proSignal.xNPoints), _proImage = self)
 
+        self._reorganizeClusters()
+
+
     def PlotClusters(self):
         for u in self.clusters[:-1]:
             u.plot()
@@ -80,7 +83,7 @@ class ProcessedImage:
         for u in self.transitions:
             u.plot()
 
-    def ReorganizeClusters(self):
+    def _reorganizeClusters(self):
         for u, i in enumerate(self.transitions):
             self.transitions[u] = _reorganize_clusters(i, _proImage=self)
 
@@ -347,17 +350,62 @@ class Transition:
     def copy(self):
         return deepcopy(self)
         
-    def linear_fit(self):
-        cx, cy = average_y(self.ccx, self.ccy)
-        model = lmf.models.LinearModel()
-        ret = model.fit(cy, x=cx, slope=1, intercept=0)
-        self.pixel_slope, self.pixel_intercept = ret.values.get('slope'), ret.values.get('intercept')
-        if self._proSignal._yFlip == True:
-            self.slope = self.pixel_slope/(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)*self._proSignal.xNPoints/(self._proSignal.xStop-self._proSignal.xStart)
-            self.intercept = self.pixel_intercept/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)+self._proSignal.yStop-self._proSignal.xStart*self.slope
+    def linear_fit(self, plot = False, xmin = None, xmax = None, ymin = None, ymax = None):
+        if xmin == None:
+            xmin, pxmin = -np.inf, -np.inf
         else:
-            self.slope = self.pixel_slope/self._proSignal.yNPoints*(self._proSignal.yStop-self._proSignal.yStart)*self._proSignal.xNPoints/(self._proSignal.xStop-self._proSignal.xStart)
-            self.intercept = self.pixel_intercept/self._proSignal.yNPoints*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart+self._proSignal.xStart*self.slope
+            pxmin = int(round((xmin-self._proSignal.xStart)/(self._proSignal.xStop-self._proSignal.xStart)*(self._proSignal.xNPoints-1)))
+        if xmax == None:
+            xmax, pxmax = np.inf, np.inf
+        else:
+            pxmax = int(round((xmax-self._proSignal.xStart)/(self._proSignal.xStop-self._proSignal.xStart)*(self._proSignal.xNPoints-1)))
+        if ymin == None:
+            if self._proSignal._yFlip == True:
+                ymin, pymax = -np.inf, np.inf
+            else:
+                ymin, pymin = -np.inf, -np.inf
+        else:
+            if self._proSignal._yFlip == True:
+                pymax = int(round((ymin-self._proSignal.yStop)/(self._proSignal.yStart-self._proSignal.yStop)*float(self._proSignal.yNPoints-1)))
+            else:
+                pymax = int(round((ymin-self._proSignal.yStart)/(self._proSignal.yStop-self._proSignal.yStart)*float(self._proSignal.yNPoints-1)))
+        if ymax == None:
+            if self._proSignal._yFlip == True:
+                ymax, pymin = np.inf, -np.inf
+            else:
+                ymax, pymax = np.inf, np.inf
+        else:
+            if self._proSignal._yFlip == True:
+                pymin = int(round((ymax-self._proSignal.yStop)/(self._proSignal.yStart-self._proSignal.yStop)*float(self._proSignal.yNPoints-1)))
+            else:
+                pymin = int(round((ymax-self._proSignal.yStart)/(self._proSignal.yStop-self._proSignal.yStart)*float(self._proSignal.yNPoints-1)))
+        c = average_y(self.ccx, self.ccy)
+        c = np.array(c).T
+        try:
+            c = np.array([item for item in c if item[0]<= pxmax and item[0]>= pxmin and item[1]<= pymax and item[1]>= pymin]).T
+            cx, cy = c[0], c[1]
+            model = lmf.models.LinearModel()
+            ret = model.fit(cy, x=cx, slope=1, intercept=0)
+            self.pixel_slope, self.pixel_intercept = ret.values.get('slope'), ret.values.get('intercept')
+            if self._proSignal._yFlip == True:
+                self.slope = self.pixel_slope/(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)*self._proSignal.xNPoints/(self._proSignal.xStop-self._proSignal.xStart)
+                self.intercept = self.pixel_intercept/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)+self._proSignal.yStop-self._proSignal.xStart*self.slope
+            else:
+                self.slope = self.pixel_slope/self._proSignal.yNPoints*(self._proSignal.yStop-self._proSignal.yStart)*self._proSignal.xNPoints/(self._proSignal.xStop-self._proSignal.xStart)
+                self.intercept = self.pixel_intercept/self._proSignal.yNPoints*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart-self._proSignal.xStart*self.slope
+            if plot == True:
+                xx = np.linspace(self.sStart_x/(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, (self.sStop_x/(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart), 1001)
+                yy = xx*self.slope+self.intercept
+                c = np.array((xx, yy)).T
+                c = np.array([item for item in c if item[0]<= xmax and item[0]>= xmin and item[1]<= ymax and item[1]>= ymin]).T
+                xx, yy = c[0], c[1]
+                plt.plot(xx, yy, '-')
+                plt.text(np.mean(xx), np.mean(yy), "%(slope).3f" %{"slope":self.slope})
+        except(IndexError):
+            pass
+
+
+
             
 def _reorganize_clusters(tran, _proImage=None):
     p0s = []
