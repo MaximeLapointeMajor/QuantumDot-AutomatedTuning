@@ -382,7 +382,7 @@ class Transition:
         c = average_y(self.ccx, self.ccy)
         c = np.array(c).T
         try:
-            c = np.array([item for item in c if item[0]<= pxmax and item[0]>= pxmin and item[1]<= pymax and item[1]>= pymin]).T
+            c = np.array([item for item in c if item[0] <= pxmax and item[0] >= pxmin and item[1] <= pymax and item[1] >= pymin]).T
             cx, cy = c[0], c[1]
             model = lmf.models.LinearModel()
             ret = model.fit(cy, x=cx, slope=1, intercept=0)
@@ -397,9 +397,9 @@ class Transition:
                 xx = np.linspace(self.sStart_x/(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, (self.sStop_x/(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart), 1001)
                 yy = xx*self.slope+self.intercept
                 c = np.array((xx, yy)).T
-                c = np.array([item for item in c if item[0]<= xmax and item[0]>= xmin and item[1]<= ymax and item[1]>= ymin]).T
+                c = np.array([item for item in c if item[0] <= xmax and item[0] >= xmin and item[1] <= ymax and item[1] >= ymin]).T
                 xx, yy = c[0], c[1]
-                plt.plot(xx, yy, '-')
+                plt.plot(xx, yy, '-b')
                 plt.text(np.mean(xx), np.mean(yy), "%(slope).3f" %{"slope":self.slope})
         except(IndexError):
             pass
@@ -413,8 +413,7 @@ def _reorganize_clusters(tran, _proImage=None):
         p0s.append(u.p0_x)
     index = np.array(p0s).argsort()
     tt = Transition(tran.clusters[index[0]], _proImage=_proImage)
-    list(index).pop(0)
-    for u in index:
+    for u in index[1:]:
         tt = Transition(tran.clusters[u], tt, _proImage=_proImage)
     return tt
 
