@@ -73,7 +73,8 @@ class ProcessedImage:
         self.transitions, self.leftover_clusters = Transitions(cc, (self._proSignal.yNPoints, self._proSignal.xNPoints), _proImage = self)
 
         self._reorganizeClusters()
-
+        self._extend_edges()
+        self._reorganizeClusters()
 
     def PlotClusters(self):
         for u in self.clusters[:-1]:
@@ -86,6 +87,11 @@ class ProcessedImage:
     def _reorganizeClusters(self):
         for u, i in enumerate(self.transitions):
             self.transitions[u] = _reorganize_clusters(i, _proImage=self)
+
+    def _extend_edges(self):
+        for u, i in enumerate(self.transitions):
+            self.transitions[u] = _extend_edges(i, _proImage=self)
+
 
     def copy(self):
         return deepcopy(self)
@@ -264,7 +270,7 @@ class Transition:
     ySegment . . .\t array-like.  List of y-coordinate of the points that approximate the best the transition.  It is built with (sStart_y, p0s_y, sStop_y)
     """
     
-    def __init__(self, cluster, transition=None, _proImage = None):
+    def __init__(self, cluster, transition = None, _proImage = None):
         if _proImage != None:
             self._proSignal = _proImage._proSignal
         
@@ -407,7 +413,7 @@ class Transition:
 
 
             
-def _reorganize_clusters(tran, _proImage=None):
+def _reorganize_clusters(tran, _proImage = None):
     p0s = []
     for u in tran.clusters:
         p0s.append(u.p0_x)
@@ -416,6 +422,85 @@ def _reorganize_clusters(tran, _proImage=None):
     for u in index[1:]:
         tt = Transition(tran.clusters[u], tt, _proImage=_proImage)
     return tt
+
+
+def _extend_edges(tran, _proImage = None):
+    d = []
+    for u, i in enumerate(tran.p0s):
+        d.append(np.sqrt((tran.p0_xs[u-1]-tran.p0_xs[u])**2+(tran.p0_ys[u-1]-tran.p0_ys[u])**2))
+    d = np.array(d)
+    np0, aver = float(d.shape[0]-1), 0.
+    for u in d[1:]:
+        aver = aver + u/np0
+    tran.linear_fit()
+    y_x0 = tran.pixel_intercept
+    y_x1 = tran.pixel_slope*float(tran._proSignal.xNPoints-1.)+tran.pixel_intercept
+    x_y0 = -tran.pixel_intercept/tran.pixel_slope
+    x_y1 = (float(tran._proSignal.yNPoints-1)-tran.pixel_intercept)/tran.pixel_slope
+    if np.sqrt((y_x0-tran.sStart_y)**2+(tran.sStart_x)**2) <= aver and y_x0 > 0. and y_x0 < float(tran._proSignal.yNPoints-1):
+        y_x0 = int(y_x0+1.)
+        coord = [y_x0, 0]
+        cc = Cluster(_generate_cluster(coord), 0)
+        tran = Transition(cc, transition = tran, _proImage = _proImage)
+    elif np.sqrt((y_x1-tran.sStart_y)**2+(tran.sStart_x-float(tran._proSignal.xNPoints-1))**2) <= aver and y_x1 > 0. and y_x1 < float(tran._proSignal.yNPoints-1):
+        y_x1 = int(y_x1+1.)
+        coord = [y_x1, tran._proSignal.xNPoints-1]
+        cc = Cluster(_generate_cluster(coord), 0)
+        tran = Transition(cc, transition = tran, _proImage = _proImage)
+    elif np.sqrt((x_y0-tran.sStart_x)**2+(tran.sStart_y)**2) <= aver and x_y0 > 0. and x_y0 < float(tran._proSignal.xNPoints-1):
+        x_y0 = int(x_y0+1.)
+        coord = [0, x_y0]
+        cc = Cluster(_generate_cluster(coord), 0)
+        tran = Transition(cc, transition = tran, _proImage = _proImage)
+    elif np.sqrt((x_y1-tran.sStart_x)**2+(tran.sStart_y-float(tran._proSignal.yNPoints-1))**2) <= aver and x_y1 > 0. and x_y1 < float(tran._proSignal.xNPoints-1):
+        x_y1 = int(x_y1+1.)
+        coord = [x_y1, tran._proSignal.yNPoints-1]
+        cc = Cluster(_generate_cluster(coord), 0)
+        tran = Transition(cc, transition = tran, _proImage = _proImage)
+    if np.sqrt((y_x0-tran.sStop_y)**2+(tran.sStop_x)**2) <= aver and y_x0 > 0. and y_x0 < float(tran._proSignal.yNPoints-1):
+        y_x0 = int(y_x0+1.)
+        coord = [y_x0, 0]
+        cc = Cluster(_generate_cluster(coord), 0)
+        tran = Transition(cc, transition = tran, _proImage = _proImage)
+    elif np.sqrt((y_x1-tran.sStop_y)**2+(tran.sStop_x-float(tran._proSignal.xNPoints-1))**2) <= aver and y_x1 > 0. and y_x1 < float(tran._proSignal.yNPoints-1):
+        y_x1 = int(y_x1+1.)
+        coord = [y_x1, tran._proSignal.xNPoints-1]
+        cc = Cluster(_generate_cluster(coord), 0)
+        tran = Transition(cc, transition = tran, _proImage = _proImage)
+    elif np.sqrt((x_y0-tran.sStop_x)**2+(tran.sStop_y)**2) <= aver and x_y0 > 0. and x_y0 < float(tran._proSignal.xNPoints-1):
+        x_y0 = int(x_y0+1.)
+        coord = [0, x_y0]
+        cc = Cluster(_generate_cluster(coord), 0)
+        tran = Transition(cc, transition = tran, _proImage = _proImage)
+    elif np.sqrt((x_y1-tran.sStop_x)**2+(tran.sStop_y-float(tran._proSignal.yNPoints-1))**2) <= aver and x_y1 > 0. and x_y1 < float(tran._proSignal.xNPoints-1):
+        x_y1 = int(x_y1+1.)
+        coord = [tran._proSignal.yNPoints-1, x_y1]
+        cc = Cluster(_generate_cluster(coord), 0)
+        tran = Transition(cc, transition = tran, _proImage = _proImage)
+    return tran
+
+def _generate_cluster(coord):
+    cc = []
+    if coord[0] != 0:
+        if coord[1] != 0:
+            for u in product([coord[0], coord[0]-1], [coord[1], coord[1]-1]):
+                cc.append(deepcopy(u))
+        else:
+            for u in product([coord[0], coord[0]-1], [coord[1], coord[1]+1]):
+                cc.append(deepcopy(u))
+    else:
+        if coord[1] != 0:
+            for u in product([coord[0], coord[0]+1], [coord[1], coord[1]-1]): 
+                cc.append(deepcopy(u))
+        else:
+            for u in product([coord[0], coord[0]+1], [coord[1], coord[1]+1]):
+                cc.append(deepcopy(u))
+    return np.array(cc)
+
+
+
+
+
 
 
 def Initialization(cc, max_gap = 0, _proImage = None):
