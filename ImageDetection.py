@@ -14,6 +14,7 @@ from numpy.linalg import eig
 from copy import deepcopy
 import lmfit as lmf
 import matplotlib.pyplot as plt
+import operator
 
 #from scipy.optimize import curve_fit
 
@@ -75,6 +76,7 @@ class ProcessedImage:
         self._reorganizeClusters()
         self._extend_edges()
         self._reorganizeClusters()
+        self._sort_transitions()
 
     def PlotClusters(self):
         for u in self.clusters[:-1]:
@@ -91,6 +93,12 @@ class ProcessedImage:
     def _extend_edges(self):
         for u, i in enumerate(self.transitions):
             self.transitions[u] = _extend_edges(i, _proImage=self)
+
+    def _sort_transitions(self):
+        for u, i in enumerate(self.transitions):
+            self.transitions[u]._ind = np.mean(i.ccx)
+        self.transitions = sorted(self.transitions, key=operator.attrgetter('_ind'))
+
 
 
     def copy(self):
@@ -496,12 +504,6 @@ def _generate_cluster(coord):
             for u in product([coord[0], coord[0]+1], [coord[1], coord[1]+1]):
                 cc.append(deepcopy(u))
     return np.array(cc)
-
-
-
-
-
-
 
 def Initialization(cc, max_gap = 0, _proImage = None):
     """
