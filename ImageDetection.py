@@ -99,6 +99,20 @@ class ProcessedImage:
             self.transitions[u]._ind = np.mean(i.ccx)
         self.transitions = sorted(self.transitions, key=operator.attrgetter('_ind'))
 
+    def AdditionVoltage(self, yvoltage, ymin = None, ymax = None):
+        for u in self.transitions:
+            if ymin != None or ymax != None:
+                u.linear_fit(ymin = ymin, ymax = ymax)
+            elif hasattr(u, 'slope')==False:
+                u.linear_fit()
+        for u, i in enumerate(self.transitions):
+            if u==0:
+                self.transitions[u].additionVoltage = None
+            else:
+                try:
+                    self.transitions[u].additionVoltage = ((yvoltage-i.intercept)/i.slope)-((yvoltage-self.transitions[u-1].intercept)/self.transitions[u-1].slope)
+                except AttributeError:
+                    self.transitions[u].additionVoltage = None
 
 
     def copy(self):
