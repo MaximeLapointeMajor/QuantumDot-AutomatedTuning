@@ -269,6 +269,13 @@ class Cluster:
             else:
                 plt.plot(self.xSegment/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, self.ySegment/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)+self._proSignal.yStop, '-')
 
+    def gen_img(self):
+        img = self._proSignal.transition.zData.copy()*0.
+        for u in self.cluster:
+            img[u[0], u[1]] = 1.
+        self.img = img
+
+
 
 class Transition:
     """
@@ -432,9 +439,9 @@ class Transition:
         except(IndexError):
             pass
 
+def _extend_leftover(tran, lefto, _proImage = None):
+    pass
 
-
-            
 def _reorganize_clusters(tran, _proImage = None):
     p0s = []
     for u in tran.clusters:
@@ -444,7 +451,6 @@ def _reorganize_clusters(tran, _proImage = None):
     for u in index[1:]:
         tt = Transition(tran.clusters[u], tt, _proImage=_proImage)
     return tt
-
 
 def _extend_edges(tran, _proImage = None):
     d = []
@@ -585,7 +591,7 @@ def Linkage(image, min_cluster_size=4, gap_size=None):
     index = np.nonzero(img)
     if gap_size == None and index[0].shape < 1000: #The constant still needs to be determined.  Perhaps as density of points?
         gap_size = 1
-    else:
+    elif gap_size == None:
         gap_size = 0
     while (index[0].shape[0]!=0):
         group = _group(img, ref=list([index[0][0], index[1][0]]), gap_size=gap_size)
