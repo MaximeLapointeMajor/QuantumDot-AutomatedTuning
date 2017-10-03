@@ -29,7 +29,7 @@ class ProcessedSignal:
                 self.acqIndex = 0
             else:
                 self.acqIndex = acqIndex
-#            self._Nanofile = Nanofile
+            self._Nanofile = Nanofile
             yData = Nanofile.yData
             xData = Nanofile.xData
             self.yName = Nanofile.yName
@@ -128,7 +128,7 @@ class ProcessedSignal:
             ymin_ind = sum(1 for i in abs(cut.yData) if i < abs(ystart))
             cut.yData = cut.yData[ymin_ind:][:cut.yNPoints-ymin_ind-ymax_ind]
             cut2 = deepcopy(cut)
-            cut.data = np.zeros((cut2.nAcqChan, cut2.yNPoints-ymax_ind-ymin_ind, cut2.XNPoints))
+            cut.data = np.zeros((cut2.nAcqChan, cut2.yNPoints-ymax_ind-ymin_ind, cut2.xNPoints))
             for u, i in enumerate(cut2.data):
                 cut.data[u] = i[ymin_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
         else:
@@ -262,9 +262,16 @@ def _cutoff(xdata, ydata, btype, fs):
 #        print result2.values.get('x0')-result2.values.get('gamma0')
         if btype=='high':
             if result2.values.get('x0')-result2.values.get('gamma0') > 3*result.values.get('gamma1'):
-                return result2.values.get('x0')-result2.values.get('gamma0')
+                if result2.values.get('x0')-result2.values.get('gamma0') > 0.:
+                    return result2.values.get('x0')-result2.values.get('gamma0')
+                else:
+                    return 0.
             else:
-                return 3*result.values.get('gamma1')
+                if 3*result.values.get('gamma1') > 0.:
+                    print "failed: ", 3*result.values.get('gamma1')
+                    return 3*result.values.get('gamma1')
+                else: 
+                    return 0.
         elif btype=='low':
             return result2.values.get('x0')+result2.values.get('gamma0')
     except Exception:
@@ -282,6 +289,9 @@ def _butter_pass(cutoff, fs, order=5, btype='high'):
     """
     nyq = 0.5*fs
     normal_cutoff = cutoff/nyq
+    print normal_cutoff
+    if normal_cutoff >= 1.:
+        normal_cutoff = 1.
     b, a = signal.butter(order, normal_cutoff, btype=btype, analog=False)
     return b, a
 

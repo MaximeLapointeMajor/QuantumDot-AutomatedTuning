@@ -161,7 +161,7 @@ class Nanofile:
             cut.yData = cut.yData[ymin_ind:][:cut.yNPoints-ymin_ind-ymax_ind]
             cut2 = deepcopy(cut)
             cut.data = np.zeros((cut2.nAcqChan, cut2.yNPoints-ymax_ind-ymin_ind, cut2.xNPoints))
-            for u, i in enumerate(cut2.Data):
+            for u, i in enumerate(cut2.data):
                 cut.data[u] = i[ymin_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
         else:
             ymax_ind = sum(1 for i in abs(cut.yData) if i > abs(ystop))
@@ -169,7 +169,7 @@ class Nanofile:
             cut.yData = cut.yData[ymax_ind:][:cut.yNPoints-ymin_ind-ymax_ind]
             cut2 = deepcopy(cut)
             cut.data = np.zeros((cut2.nAcqChan, cut2.yNPoints-ymax_ind-ymin_ind, cut2.xNPoints))
-            for u, i in enumerate(cut2.Data):
+            for u, i in enumerate(cut2.data):
                 cut.data[u] = i[ymax_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
         cut.yNPoints, cut.yStart, cut.yStop = cut.yData.size, cut.yData[0], cut.yData[-1]
         if plot == True:
