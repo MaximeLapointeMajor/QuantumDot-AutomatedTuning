@@ -224,6 +224,61 @@ def AdjacentAveraging2D(zdata, nPoints=10):
         zz[u] = AdjacentAveraging(i, nPoints=nPoints)
     return zz
 
+def _datacheck_peakdetect(x_axis, y_axis):
+    if x_axis is None:
+        x_axis = range(len(y_axis))
+    
+    if len(y_axis) != len(x_axis):
+        raise ValueError( 
+                "Input vectors y_axis and x_axis must have same length")
+    
+    #needs to be a numpy array
+    y_axis = np.array(y_axis)
+    x_axis = np.array(x_axis)
+    return x_axis, y_axis
+
+def _maxima(ydata, xdata=None, lookahead=1):
+    """
+    
+    """
+    
+    xdata, ydata = _datacheck_peakdetect(xdata, ydata)
+#    length = len(ydata)
+    peaks = []
+    
+    for u, (xx, yy) in enumerate(zip(xdata[lookahead:][:-lookahead], ydata[lookahead:][:-lookahead])):
+        if yy == max(ydata[u:][:(2*lookahead)+1]):
+            peaks.append([xx, yy])
+    
+    return np.array(peaks)
+    
+def _minima(ydata, xdata=None, lookahead=1):    
+    """
+    
+    """
+    peaks = _maxima(ydata = -ydata, xdata = xdata, lookahead=lookahead)
+    peaks.T[1] = -peaks.T[1]
+    return peaks
+
+def _peak_decay_checkup(peaks, mid=None):
+    """
+    
+    """
+    if mid == None:
+        mid = peaks.shape[0]/2
+    
+    peaks = list(peaks)
+    
+    for u, (xx, yy) in enumerate(peaks):
+        if u < mid:
+            pass#look points before
+        elif u > mid:
+            pass#look points after
+    return np.array(peaks)
+    
+    
+    
+
 def _cutoff(xdata, ydata, btype, fs):
     """
     _cutoff calculates the cutoff frequency for a low or high pass filter in order to keep most of the desired signal but remove a maximum ammount of the DC and low frequency components or high frequency components depending on the filter type.
@@ -232,46 +287,68 @@ def _cutoff(xdata, ydata, btype, fs):
     The cutoff frequency is calculated using the peak and gamma of the double-Lorentzians.  (x0-gamma) or (x0+gamma) depending on if you are applying a high or low pass filter.
     """
     try:
+        window = np.hanning(xdata.shape[0])
         freq = FourierFrequency(xdata, xdata.shape[0])
         index = np.argsort(freq)
-        tdf = FourierTransform(ydata, ydata.shape[0])
+        tdf = FourierTransform(ydata*window, ydata.shape[0])
         tdf = abs(tdf)
-        def lor(x, A0, x0, gamma0, A1, x1, gamma1, delta):
-            return A0*(1/np.pi)*(gamma0/2)/((x-x0)**2+(gamma0/2)**2)+A0*(1/np.pi)*(gamma0/2)/((x+x0)**2+(gamma0/2)**2)+A1*(1/np.pi)*(gamma1/2)/((x+x1)**2+(gamma1/2)**2)
-        lmod = lmf.Model(lor)           
-        lmod.make_params()
-        lmod.set_param_hint('A0', value=max(tdf)/2., min=0.)
-        lmod.set_param_hint('A1', value=max(tdf), min=0.)
-        lmod.set_param_hint('gamma1', value=1., min=0.)
-        lmod.set_param_hint('x0', value=25., min=0.)
-        lmod.set_param_hint('x1', value=0.)
-        lmod.set_param_hint('delta', value=20., min=0.)
-        lmod.set_param_hint('gamma0', value=1., min=0., expr='-delta-3*gamma1+x0')
-        result = lmod.fit(tdf[index], x=freq[index])
+        pp = _maxima(tdf[index], freq[index], lookahead = 1)
+        pp, hh = np.array(np.array(pp).T[0]), np.array(np.array(pp).T[1])
+        ind = np.where(pp == min(abs(pp)))[0][0]
+        ind2, ind3 = ind+1, ind+2
+        while hh[ind2]<hh[ind3]:
+            ind2, ind3 = ind2+1, ind3+1
+        while hh[ind3]<hh[ind3+1]:
+            ind3 = ind3+1
+        for u, i in enumerate(freq):
+            if i > (pp[ind2]+pp[ind3])/2. or i < -(pp[ind2]+pp[ind3])/2. or (i < pp[ind2]/2. and i > -pp[ind2]/2.):
+                tdf[u] = 0.
+#        def lor(x, A0, x0, gamma0, A1, x1, gamma1, delta):
+#            return A0*(1/np.pi)*(gamma0/2)/((x-x0)**2+(gamma0/2)**2)+A0*(1/np.pi)*(gamma0/2)/((x+x0)**2+(gamma0/2)**2)+A1*(1/np.pi)*(gamma1/2)/((x+x1)**2+(gamma1/2)**2)
+#        lmod = lmf.Model(lor)           
+#        lmod.make_params()
+#        lmod.set_param_hint('A0', value=max(tdf)/(2.*np.pi), min=max(tdf)/1000.)
+#        lmod.set_param_hint('A1', value=max(tdf)/(2*np.pi), min=0.)
+#        lmod.set_param_hint('gamma1', value=0.1, min=0.)
+#        lmod.set_param_hint('x0', value=pp[ind+1], min=pp-.0001, max=pp+.0001)
+#        lmod.set_param_hint('x1', value=0.)
+#        lmod.set_param_hint('delta', value=10., min=0.)
+#        lmod.set_param_hint('gamma0', value=1., min=0.001, expr='-delta-gamma1+x0')
+#        result = lmod.fit(tdf[index], x=freq[index])
 #        print result.values.get('x0')-result.values.get('gamma0')
-        tdf2 = tdf-lor(freq, 0., result.values.get('x0'), result.values.get('gamma0'), result.values.get('A1'), result.values.get('x1'), result.values.get('gamma1'), result.values.get('delta'))
-        def lor2(x, A0, x0, gamma0, delta):
+#        tdf2 = tdf-lor(freq, 0., result.values.get('x0'), result.values.get('gamma0'), result.values.get('A1'), result.values.get('x1'), result.values.get('gamma1'), result.values.get('delta'))
+        def lor2(x, A0, x0, gamma0):
             return A0*(1/np.pi)*(gamma0/2)/((x-x0)**2+(gamma0/2)**2)+A0*(1/np.pi)*(gamma0/2)/((x+x0)**2+(gamma0/2)**2)
         lmod2 = lmf.Model(lor2)
         lmod2.make_params()
-        lmod2.set_param_hint('A0', value=max(tdf2), min=0.)
-        lmod2.set_param_hint('x0', value=25., min=0.)
-        lmod2.set_param_hint('delta', value=(25.-3.5*result.values.get('gamma1')), min=0.)
-        lmod2.set_param_hint('gamma0', value=1., min=0., expr='-delta-3*%f+x0'%result.values.get('gamma1'))
-        result2 = lmod2.fit(tdf2[index], x=freq[index])
+        lmod2.set_param_hint('A0', value=max(tdf), min=max(tdf)/1000.)
+        lmod2.set_param_hint('x0', value=pp[ind2], min=0.)
+        lmod2.set_param_hint('gamma0', value=1., min=0.)
+        result2 = lmod2.fit(tdf[index], x=freq[index])
 #        print result2.values.get('x0')-result2.values.get('gamma0')
+        print result2.values.get('x0'), result2.values.get('gamma0')
+#        ff = np.linspace(-1000., 1000., 10001)
+#        plt.plot(ff, lor2(ff, result2.values.get('A0'), result2.values.get('x0'), result2.values.get('gamma0'), result2.values.get('delta')))
         if btype=='high':
-            if result2.values.get('x0')-result2.values.get('gamma0') > 3*result.values.get('gamma1'):
-                if result2.values.get('x0')-result2.values.get('gamma0') > 0.:
-                    return result2.values.get('x0')-result2.values.get('gamma0')
-                else:
-                    return 0.
+#            if result2.values.get('x0')-result2.values.get('gamma0') > 3*result.values.get('gamma1'):
+#                if result2.values.get('x0')-result2.values.get('gamma0') > 0.:
+#                    print "freq: ", result2.values.get('x0')-result2.values.get('gamma0')
+            if result2.values.get('x0')-result2.values.get('gamma0') > 0.:
+                print "frequency: ", result2.values.get('x0')-result2.values.get('gamma0')
+                return result2.values.get('x0')-result2.values.get('gamma0')
             else:
-                if 3*result.values.get('gamma1') > 0.:
-                    print "failed: ", 3*result.values.get('gamma1')
-                    return 3*result.values.get('gamma1')
-                else: 
-                    return 0.
+                print "failed: 0"
+                return 0.
+#                else:
+#                    print "freq: ", 0.
+#                    return 0.
+#            else:
+#                if 3*result.values.get('gamma1') > 0.:
+#                    print "failed: freq: ", 3*result.values.get('gamma1')
+#                    return 3*result.values.get('gamma1')
+#                else: 
+#                    print "failed: freq: ", 0.
+#                    return 0.
         elif btype=='low':
             return result2.values.get('x0')+result2.values.get('gamma0')
     except Exception:
@@ -289,7 +366,7 @@ def _butter_pass(cutoff, fs, order=5, btype='high'):
     """
     nyq = 0.5*fs
     normal_cutoff = cutoff/nyq
-    print normal_cutoff
+    print "normalized cutoff: ", normal_cutoff
     if normal_cutoff >= 1.:
         normal_cutoff = 1.
     b, a = signal.butter(order, normal_cutoff, btype=btype, analog=False)
@@ -318,7 +395,7 @@ def PassFilter2D(xdata, zdata, order=5, btype='high', cutoff=None):
     fs = (xdata.shape[0]-1)/abs(xdata.max()-xdata.min())
     zz = np.zeros_like(zdata)
     for u, i in enumerate(zdata):
-#        print u
+        print u
         zz[u] = PassFilter(xdata, i, fs=fs, order=order, btype=btype, cutoff=cutoff)
     return zz
 
