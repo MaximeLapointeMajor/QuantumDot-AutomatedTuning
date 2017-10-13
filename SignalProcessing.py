@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Thu Jul 28 10:45:21 2016
-
 @author: Maxime
 """
 
@@ -23,7 +22,28 @@ class ProcessedSignal:
         if Nanofile == None:
             self.xData = xData
             self.yData = yData
-        
+            self._Nanofile = None
+            self.yName = 'yName'
+            self.yUnit = 'yUnit'
+            self.yStart = min(yData)
+            self.yStop = max(yData)
+            self.yNPoints = yData.shape[0]
+            self.xName = 'xName'
+            self.xUnit = 'xUnit'
+            self.xStart = min(xData)
+            self.xStop = max(xData)
+            self.xNPoints = xData.shape[0]
+            self.filename = 'filename'
+            self.extension = 'extension'
+            self.nAcqChan = 'nAcqChan'
+            self.acqName = 'acqName'
+            self.acqUnit = 'acqUnit'
+            self.data = []
+            self.data = self.data.append(zData)
+            self.measType = 'measType'
+            self._yFlip = False
+            self.acqIndex = 0
+
         if Nanofile != None:
             if acqIndex == None:
                 self.acqIndex = 0
@@ -295,17 +315,19 @@ def _cutoff(xdata, ydata, btype, fs):
         pp = _maxima(tdf[index], freq[index], lookahead = 1)
         pp, hh = np.array(np.array(pp).T[0]), np.array(np.array(pp).T[1])
         ind = np.where(pp == min(abs(pp)))[0][0]
-        ind2, ind3 = ind+1, ind+2
-        while hh[ind2]<hh[ind3]:
-            ind2, ind3 = ind2+1, ind3+1
-        while hh[ind3]<hh[ind3+1]:
-            ind3 = ind3+1
+        ind2 = np.where(hh == max(hh[(ind+1):]))[0][0]
+#        ind2, ind3 = ind+1, ind+2
+#        while hh[ind2] < max(hh[(ind+1):]):
+#            ind2, ind3 = ind2+1, ind3+1
+#        while hh[ind3]<hh[ind3+1]:
+#            ind3 = ind3+1
         for u, i in enumerate(freq):
-            if i > (pp[ind2]+pp[ind3])/2. or i < -(pp[ind2]+pp[ind3])/2. or (i < pp[ind2]/2. and i > -pp[ind2]/2.):
+            if i > abs(pp[ind2])*1.5 or i < -abs(pp[ind2])*1.5 or (i < abs(pp[ind2])/2. and i > -abs(pp[ind2])/2.):
+#            if i > (pp[ind2]+pp[ind3])/2. or i < -(pp[ind2]+pp[ind3])/2. or (i < pp[ind2]/2. and i > -pp[ind2]/2.):
                 tdf[u] = 0.
 #        def lor(x, A0, x0, gamma0, A1, x1, gamma1, delta):
 #            return A0*(1/np.pi)*(gamma0/2)/((x-x0)**2+(gamma0/2)**2)+A0*(1/np.pi)*(gamma0/2)/((x+x0)**2+(gamma0/2)**2)+A1*(1/np.pi)*(gamma1/2)/((x+x1)**2+(gamma1/2)**2)
-#        lmod = lmf.Model(lor)           
+#        lmod = lmf.Model(lor)
 #        lmod.make_params()
 #        lmod.set_param_hint('A0', value=max(tdf)/(2.*np.pi), min=max(tdf)/1000.)
 #        lmod.set_param_hint('A1', value=max(tdf)/(2*np.pi), min=0.)
@@ -322,7 +344,7 @@ def _cutoff(xdata, ydata, btype, fs):
         lmod2 = lmf.Model(lor2)
         lmod2.make_params()
         lmod2.set_param_hint('A0', value=max(tdf), min=max(tdf)/1000.)
-        lmod2.set_param_hint('x0', value=pp[ind2], min=0.)
+        lmod2.set_param_hint('x0', value=abs(pp[ind2]), min=0.)
         lmod2.set_param_hint('gamma0', value=1., min=0.)
         result2 = lmod2.fit(tdf[index], x=freq[index])
 #        print result2.values.get('x0')-result2.values.get('gamma0')
@@ -335,6 +357,8 @@ def _cutoff(xdata, ydata, btype, fs):
 #                    print "freq: ", result2.values.get('x0')-result2.values.get('gamma0')
             if result2.values.get('x0')-result2.values.get('gamma0') > 0.:
                 print "frequency: ", result2.values.get('x0')-result2.values.get('gamma0')
+                if hh[ind2] != max(hh[(ind+1):]):
+                    print "False", " maximum", "\n", "\n", "\n"
                 return result2.values.get('x0')-result2.values.get('gamma0')
             else:
                 print "failed: 0"
@@ -572,7 +596,6 @@ def PeakSpacing(xdata, ydata, lookahead=20, delta=0, sigma=None, smooth=None, k=
     The peak detection uses the peakdetect.peakdetect function.  It requires the x and y axis arrays.
     lookahead is the distance to look ahead from a peak candidate to determine if it is an actual peak
     delta specifies a minimum difference between a peak and the following points, before a peak may be considered a peak.  May be usefull for noisy signals
-
     The function returns the max, min peaks and the peak spacing calculated using the maximums.
     """
     spl = dv.Dspline(xdata, ydata, sigma=sigma, s=smooth, k=k, n=n)
