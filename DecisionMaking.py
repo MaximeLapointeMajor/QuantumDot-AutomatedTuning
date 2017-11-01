@@ -257,7 +257,7 @@ def next_step(diag, _yFlip = False):
             if np.any(diag._steps == 'findanytrans'):
                 ind = max(np.where(diag._steps == 'findanytrans')[0])
             else:
-                ind = np.where(diag._steps == 'init')
+                ind = np.where(diag._steps == 'init')[0][0]
             mstate = _find_any_transition(diag, ind=ind)
             return mstate
         elif np.any(verif==True):
