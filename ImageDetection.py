@@ -74,21 +74,27 @@ class ProcessedImage:
         self.transitions, self.leftover_clusters = Transitions(cc, (self._proSignal.yNPoints, self._proSignal.xNPoints), _proImage = self)
 
         self._reorganizeClusters()
-        self._extend_edges()
+        self._generate_clusters_coord()
+#        self._extend_edges()
         self._reorganizeClusters()
         self._sort_transitions()
+        self._generate_slope_int()
 
-    def PlotClusters(self):
+    def PlotClusters(self, color='r'):
         for u in self.clusters[:-1]:
-            u.plot()
+            u.plot(color=color)
 
-    def PlotTransitions(self):
+    def PlotTransitions(self, color='b'):
         for u in self.transitions:
-            u.plot()
+            u.plot(color=color)
 
     def _reorganizeClusters(self):
         for u, i in enumerate(self.transitions):
             self.transitions[u] = _reorganize_clusters(i, _proImage=self)
+
+    def _generate_clusters_coord(self):
+        for u in self.clusters:
+            u._generate_coord()
 
     def _extend_edges(self):
         for u, i in enumerate(self.transitions):
@@ -98,6 +104,10 @@ class ProcessedImage:
         for u, i in enumerate(self.transitions):
             self.transitions[u]._ind = np.mean(i.ccx)
         self.transitions = sorted(self.transitions, key=operator.attrgetter('_ind'))
+
+    def _generate_slope_int(self):
+        for u, i in enumerate(self.transitions):
+            i.linear_fit()
 
     def AdditionVoltage(self, yvoltage, ymin = None, ymax = None):
         for u in self.transitions:
@@ -183,7 +193,6 @@ class Cluster:
         self.cluster = cluster
         self.ccx = cluster.T[1]
         self.ccy = cluster.T[0]
-        self.nPoints = cluster.T[0].shape[0]
         self.ratio = ratio
         self.length = length
         self.height = length*ratio
@@ -260,14 +269,14 @@ class Cluster:
     def copy(self):
         return deepcopy(self)
 
-    def plot(self):
+    def plot(self, color='r'):
         if self._proSignal == None:
             raise NotImplementedError
         else:
             if self._proSignal._yFlip == False:
-                plt.plot(self.xSegment/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, self.ySegment/float(self._proSignal.yNPoints-1)*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart, '-')
+                plt.plot(self.xSegment/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, self.ySegment/float(self._proSignal.yNPoints-1)*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart, '-', color = color)
             else:
-                plt.plot(self.xSegment/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, self.ySegment/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)+self._proSignal.yStop, '-')
+                plt.plot(self.xSegment/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, self.ySegment/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)+self._proSignal.yStop, '-', color = color)
 
     def gen_img(self):
         img = self._proSignal.transition.zData.copy()*0.
@@ -275,7 +284,13 @@ class Cluster:
             img[u[0], u[1]] = 1.
         self.img = img
 
-
+    def _generate_coord(self):
+        if self._proSignal._yFlip == False:
+            self.x_coord = self.ccx/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart
+            self.y_coord = self.ccy/float(self._proSignal.yNPoints-1)*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart
+        else:
+            self.x_coord = self.ccx/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart
+            self.y_coord = self.ccy/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)+self._proSignal.yStop
 
 class Transition:
     """
@@ -373,14 +388,19 @@ class Transition:
             mean_theta.append(u.theta_y)
         self.mean_theta = np.mean(mean_theta)
 
-    def plot(self):
+        self._tested_flag = None
+
+    def _update_test_flag(self, state=True):
+        self._tested_flag = state
+
+    def plot(self, color='b', *args, **kwargs):
         if self._proSignal == None:
             raise NotImplementedError
         else:
             if self._proSignal._yFlip == False:
-                plt.plot(self.xSegment/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, self.ySegment/float(self._proSignal.yNPoints-1)*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart, '-')
+                plt.plot(self.xSegment/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, self.ySegment/float(self._proSignal.yNPoints-1)*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart, '-', color = color, *args, **kwargs)
             else:
-                plt.plot(self.xSegment/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, self.ySegment/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)+self._proSignal.yStop, '-')
+                plt.plot(self.xSegment/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, self.ySegment/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)+self._proSignal.yStop, '-', color = color, *args, **kwargs)
         
     def copy(self):
         return deepcopy(self)
@@ -423,11 +443,21 @@ class Transition:
             ret = model.fit(cy, x=cx, slope=1, intercept=0)
             self.pixel_slope, self.pixel_intercept = ret.values.get('slope'), ret.values.get('intercept')
             if self._proSignal._yFlip == True:
-                self.slope = self.pixel_slope/(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)*self._proSignal.xNPoints/(self._proSignal.xStop-self._proSignal.xStart)
+                self.slope = self.pixel_slope/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)*float(self._proSignal.xNPoints-1)/(self._proSignal.xStop-self._proSignal.xStart)
                 self.intercept = self.pixel_intercept/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)+self._proSignal.yStop-self._proSignal.xStart*self.slope
+                self.vStart_x = self.sStop_x/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart
+                self.vStop_y = self.sStart_y/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)+self._proSignal.yStop
+                self.vStop_x = self.sStart_x/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart
+                self.vStart_y = self.sStop_y/float(self._proSignal.yNPoints-1)*(self._proSignal.yStart-self._proSignal.yStop)+self._proSignal.yStop
+                self.length = np.sqrt((self.vStart_x-self.vStop_x)*(self.vStart_x-self.vStop_x)+(self.vStart_y-self.vStop_y)*(self.vStart_y-self.vStop_y))
             else:
-                self.slope = self.pixel_slope/self._proSignal.yNPoints*(self._proSignal.yStop-self._proSignal.yStart)*self._proSignal.xNPoints/(self._proSignal.xStop-self._proSignal.xStart)
-                self.intercept = self.pixel_intercept/self._proSignal.yNPoints*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart-self._proSignal.xStart*self.slope
+                self.slope = self.pixel_slope/float(self._proSignal.yNPoints-1)*(self._proSignal.yStop-self._proSignal.yStart)*float(self._proSignal.xNPoints-1)/(self._proSignal.xStop-self._proSignal.xStart)
+                self.intercept = self.pixel_intercept/float(self._proSignal.yNPoints-1)*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart-self._proSignal.xStart*self.slope
+                self.vStart_x = self.sStart_x/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart
+                self.vStart_y =self.sStart_y/float(self._proSignal.yNPoints-1)*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart
+                self.vStop_x = self.sStop_x/float(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart
+                self.vStop_y = self.sStop_y/float(self._proSignal.yNPoints-1)*(self._proSignal.yStop-self._proSignal.yStart)+self._proSignal.yStart
+                self.length = np.sqrt((self.vStart_x-self.vStop_x)*(self.vStart_x-self.vStop_x)+(self.vStart_y-self.vStop_y)*(self.vStart_y-self.vStop_y))
             if plot == True:
                 xx = np.linspace(self.sStart_x/(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart, (self.sStop_x/(self._proSignal.xNPoints-1)*(self._proSignal.xStop-self._proSignal.xStart)+self._proSignal.xStart), 1001)
                 yy = xx*self.slope+self.intercept
@@ -437,6 +467,7 @@ class Transition:
                 plt.plot(xx, yy, '-b')
                 plt.text(np.mean(xx), np.mean(yy), "%(slope).3f" %{"slope":self.slope})
         except(IndexError):
+            print "failure at fitting"
             pass
 
 def _extend_leftover(tran, lefto, _proImage = None):
