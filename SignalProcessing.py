@@ -18,7 +18,7 @@ from copy import deepcopy
 
 
 class ProcessedSignal:
-    def __init__(self, xData, yData, zData, Nanofile=None, acqIndex=None):
+    def __init__(self, xData, yData, zData, Nanofile=None, acqIndex=None, freq=None, _dummycheck=None):
         if Nanofile == None:
             self.xData = xData
             self.yData = yData
@@ -72,22 +72,36 @@ class ProcessedSignal:
             self.data = Nanofile.data
             self.measType = Nanofile.measType
             self._yFlip = Nanofile._yFlip
-        
-        filtered = PassFilter2D(xData, zData)
-        phase = Phase2D(filtered)
-        derivative = Derivate2D(xData, phase)
-        transition = Transition2D(xData, yData, derivative, tresh_axis='xy', tresh='background', sigma1=.6, sigma2=1.)
-        transition = Borders(transition, 5)
 
         def _createDiagram(self, zData, dataType):
             return ProcessedSignal._Diagram(zData, dataType, self)
+        
+        if _dummycheck == None:
+            self.zData = _createDiagram(self, zData, "original")
+            filtered = PassFilter2D(xData, zData, freq=freq)
+            self.filtered = _createDiagram(self, filtered, "filtered")
+            phase = Phase2D(filtered)
+            self.phase = _createDiagram(self, phase, "phase")
+            derivative = Derivate2D(xData, phase)
+            self.derivative = _createDiagram(self, derivative, "derivative")
+            self.derivative = self.derivative.maxmin()
+            transition = Transition2D(xData, yData, self.derivative.zData, tresh_axis='x', tresh='background', sigma1=1., sigma2=2.8)
+            transition = Borders(transition, 15)
+            self.transition = _createDiagram(self, transition, "transition")
 
-        self.zData = _createDiagram(self, zData, "original")
-        self.filtered = _createDiagram(self, filtered, "filtered")
-        self.phase = _createDiagram(self, phase, "phase")
-        self.derivative = _createDiagram(self, derivative, "derivative")
-        self.transition = _createDiagram(self, transition, "transition")
-
+        if _dummycheck == True:
+            self.zData = _createDiagram(self, zData, "original")
+            self.filtered = _createDiagram(self, zData*0, "filtered")
+            self.phase = _createDiagram(self, zData*0, "phase")
+            self.derivative = _createDiagram(self, zData*0, "derivative")
+            self.transition = _createDiagram(self, zData*0, "transition")
+            
+            
+            
+            
+            
+            
+            
     class _Diagram:
         def __init__(self, zData, dataType, ProSignal):
             self.zData = zData
@@ -113,8 +127,14 @@ class ProcessedSignal:
         def copy(self):
             return deepcopy(self)           
             
-        def maxmin(self, plot=False, minimum=None, maximum=None):
+        def maxmin(self, plot=False, autorange=True, minimum=None, maximum=None):
             diag = self.copy()
+            if autorange == True:
+                aa = diag.zData.copy()
+                aa = np.sort(np.ravel(aa))
+                size = aa.shape[0]
+                minimum = aa[int(size*.001)]
+                maximum = aa[int(size*.98)]
             for u, i in enumerate(diag.zData):
                 for j, k in enumerate(i):
                     if minimum != None and k < minimum:
@@ -126,7 +146,58 @@ class ProcessedSignal:
                 diag.plot(colorbar=True)
             return diag
 
-    def datacutter(self, plot=False, xstart=None, xstop=None, ystart=None, ystop=None):
+    def datacutter(self, plot=False, xstart=None, xstop=None, ystart=None, ystop=None, freq=None):
+        cut = deepcopy(self._Nanofile)
+        if self._yFlip == True:
+            data = np.zeros_like(cut.data)
+            for u, i in enumerate(data):
+                for j, k in enumerate(i):
+                    data[u][-j-1] = cut.data[u][j]
+            self.data = deepcopy(data)
+        if self.xStart < self.xStop:
+            xmax_ind = sum(1 for i in abs(cut.xData) if i > abs(xstop))
+            xmin_ind = sum(1 for i in abs(cut.xData) if i < abs(xstart))
+            cut.xData = cut.xData[xmin_ind:][:cut.xNPoints-xmin_ind-xmax_ind]
+            cut.data = np.zeros((cut.nAcqChan, cut.yNPoints, cut.xNPoints-xmax_ind-xmin_ind))
+            for u, i in enumerate(self.data):
+                cut.data[u] = i.T[xmin_ind:][:cut.xNPoints-xmin_ind-xmax_ind].T
+        else:
+            xmax_ind = sum(1 for i in abs(cut.xData) if i > abs(xstop))
+            xmin_ind = sum(1 for i in abs(cut.xData) if i < abs(xstart))
+            cut.xData = cut.xData[xmax_ind:][:cut.xNPoints-xmin_ind-xmax_ind]
+            cut.data = np.zeros((cut.nAcqChan, cut.yNPoints, cut.xNPoints-xmax_ind-xmin_ind))
+            for u, i in enumerate(self.data):
+                cut.data[u] = i.T[xmax_ind:][:cut.xNPoints-xmin_ind-xmax_ind].T
+        cut.xNPoints, cut.xStart, cut.xStop = cut.xData.size, cut.xData[0], cut.xData[-1]
+        if self.yStart < self.yStop:
+            ymax_ind = sum(1 for i in abs(cut.yData) if i > abs(ystop))
+            ymin_ind = sum(1 for i in abs(cut.yData) if i < abs(ystart))
+            cut.yData = cut.yData[ymin_ind:][:cut.yNPoints-ymin_ind-ymax_ind]
+            cut2 = deepcopy(cut)
+            cut.data = np.zeros((cut2.nAcqChan, cut2.yNPoints-ymax_ind-ymin_ind, cut2.xNPoints))
+            for u, i in enumerate(cut2.data):
+                cut.data[u] = i[ymin_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
+        else:
+            ymax_ind = sum(1 for i in abs(cut.yData) if i > abs(ystop))
+            ymin_ind = sum(1 for i in abs(cut.yData) if i < abs(ystart))
+            cut.yData = cut.yData[ymax_ind:][:cut.yNPoints-ymin_ind-ymax_ind]
+            cut2 = deepcopy(cut)
+            cut.data = np.zeros((cut2.nAcqChan, cut2.yNPoints-ymax_ind-ymin_ind, cut2.xNPoints))
+            for u, i in enumerate(cut2.data):
+                cut.data[u] = i[ymax_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
+        cut.yNPoints, cut.yStart, cut.yStop = cut.yData.size, cut.yData[0], cut.yData[-1]
+        if self._yFlip == True:
+            data = np.zeros_like(cut.data)
+            for u, i in enumerate(data):
+                for j, k in enumerate(i):
+                    data[u][-j-1] = cut.data[u][j]
+            cut.data = deepcopy(data)
+        if plot == True:
+            plt.figure()
+            cut.plot()
+        return ProcessedSignal(cut.xData, cut.yData, cut.data[self.acqIndex], cut, self.acqIndex, freq=freq)
+
+    def _datacutter_nocomputation(self, xstart, xstop, ystart, ystop):
         cut = deepcopy(self._Nanofile)
         if self.xStart < self.xStop:
             xmax_ind = sum(1 for i in abs(cut.xData) if i > abs(xstop))
@@ -160,10 +231,31 @@ class ProcessedSignal:
             for u, i in enumerate(cut2.data):
                 cut.data[u] = i[ymax_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
         cut.yNPoints, cut.yStart, cut.yStop = cut.yData.size, cut.yData[0], cut.yData[-1]
-        if plot == True:
-            plt.figure()
-            cut.plot()
-        return ProcessedSignal(cut.xData, cut.yData, cut.data[self.acqIndex], cut, self.acqIndex)
+        pp = ProcessedSignal(cut.xData, cut.yData, cut.data[self.acqIndex], cut, self.acqIndex, _dummycheck = True)
+        xInd = np.where((self.xData <= xstop) & (self.xData >= xstart))[0]
+        yInd = np.where((self.yData <= ystop) & (self.yData >= ystart))[0]
+        if cut._yFlip == False:
+            for u, i in enumerate(yInd):
+                for j, k in enumerate(xInd):
+                    pp.transition.zData[u,j] = self.transition.zData[i,k]
+                    pp.filtered.zData[u,j] = self.filtered.zData[i,k]
+                    pp.phase.zData[u,j] = self.phase.zData[i,k]
+                    pp.derivative.zData[u,j] = self.derivative.zData[i,k]
+        else:
+            for u, i in enumerate(yInd):
+                for j, k in enumerate(xInd):
+                    ind = (np.size(self.yData)-1)/2
+                    pp.transition.zData[-u-1,j] = self.transition.zData[(-(i-ind))+ind,k]
+                    pp.filtered.zData[-u-1,j] = self.filtered.zData[(-(i-ind))+ind,k]
+                    pp.phase.zData[-u-1,j] = self.phase.zData[(-(i-ind))+ind,k]
+                    pp.derivative.zData[-u-1,j] = self.derivative.zData[(-(i-ind))+ind,k]
+        return pp
+
+    def _plot_box(self, color='b', ls='-'):
+        plt.plot([self.xStart, self.xStart], [self.yStart, self.yStop], color=color, ls=ls)
+        plt.plot([self.xStop, self.xStop], [self.yStart, self.yStop], color=color, ls=ls)
+        plt.plot([self.xStart, self.xStop], [self.yStart, self.yStart], color=color, ls=ls)
+        plt.plot([self.xStart, self.xStop], [self.yStop, self.yStop], color=color, ls=ls)
 
     def copy(self):
         return deepcopy(self)                       
@@ -296,10 +388,43 @@ def _peak_decay_checkup(peaks, mid=None):
             pass#look points after
     return np.array(peaks)
     
+def _frequency_estimation(xdata, ydata):
+    """
     
+    """
+    mmax = _maxima(ydata, xdata, lookahead = 20)
+    mmin = _minima(ydata, xdata, lookahead = 20)
+    delta = []
+    ind = []
+    
+    for u, i in enumerate(mmax[:-1]):
+        delta.append(mmax[u+1,0]-mmax[u,0])
+    for u, i in enumerate(mmin[:-1]):
+        delta.append(mmin[u+1,0]-mmin[u,0])
+
+    avg = np.mean(delta)
+    std = np.sqrt(np.var(delta))
+
+    for u, i in enumerate(delta):
+        if i < avg-2*std or i > avg+2*std:
+            ind.append(u)
+
+    index = np.argsort(-np.array(ind))
+    for u in index:
+        delta.pop(ind[u])
+
+    ff = 1./np.mean(delta)
+
+    # verify the length of measure > (mmax.shape[0]-1) * ff -- si on trouve plein de maximums qu'on finit par discarter, on doit augmenter lookahead
+    # verify the resolution*2. < np.mean(delta) -- si on sonde moins de 2 points par cycle, on a un prob
+    # verify resolution * lookahead < np.mean(delta)*2 -- le *2 car on veut faire sur qu'on est pas pogné sur une harmonique -- on doit donc diminuer lookahead
+
+    #verify if ff makes sense with resolution, lookahead, length of measure
+    
+    return ff
     
 
-def _cutoff(xdata, ydata, btype, fs):
+def _cutoff(xdata, ydata, btype, fs, ff):
     """
     _cutoff calculates the cutoff frequency for a low or high pass filter in order to keep most of the desired signal but remove a maximum ammount of the DC and low frequency components or high frequency components depending on the filter type.
     
@@ -307,22 +432,32 @@ def _cutoff(xdata, ydata, btype, fs):
     The cutoff frequency is calculated using the peak and gamma of the double-Lorentzians.  (x0-gamma) or (x0+gamma) depending on if you are applying a high or low pass filter.
     """
     try:
-        window = np.hanning(xdata.shape[0])
-        freq = FourierFrequency(xdata, xdata.shape[0])
+        print ff
+        nPts = int(1./(((xdata.max()-xdata.min())/xdata.shape[0])*(ff/10.)))
+        if nPts%2 == 0:
+            nPts = nPts + 1
+        if nPts < xdata.shape[0]:
+            nPts = xdata.shape[0]
+        print nPts
+        window = np.hanning(ydata.shape[0])
+        freq = FourierFrequency(xdata, nPts)
         index = np.argsort(freq)
-        tdf = FourierTransform(ydata*window, ydata.shape[0])
+        tdf = FourierTransform(ydata*window, nPts)
         tdf = abs(tdf)
         pp = _maxima(tdf[index], freq[index], lookahead = 1)
+#        mm = _minima(tdf[index], freq[index], lookahead=1)
         pp, hh = np.array(np.array(pp).T[0]), np.array(np.array(pp).T[1])
+#        mm = np.array(np.array(mm).T[0])#, np.array(np.array(mm).T[1])
         ind = np.where(pp == min(abs(pp)))[0][0]
         ind2 = np.where(hh == max(hh[(ind+1):]))[0][0]
+#        indmin = np.where(mm == min(abs(mm)))[0][0]
 #        ind2, ind3 = ind+1, ind+2
 #        while hh[ind2] < max(hh[(ind+1):]):
 #            ind2, ind3 = ind2+1, ind3+1
 #        while hh[ind3]<hh[ind3+1]:
 #            ind3 = ind3+1
         for u, i in enumerate(freq):
-            if i > abs(pp[ind2])*1.5 or i < -abs(pp[ind2])*1.5 or (i < abs(pp[ind2])/2. and i > -abs(pp[ind2])/2.):
+            if i > abs(pp[ind2])*1.5 or i < -abs(pp[ind2])*1.5 or (i < abs(pp[ind2])/2. and i > -abs(pp[ind2])/2.) or (tdf[u] > hh[ind2]*1.05): #(abs(i) < abs(mm[indmin])) or 
 #            if i > (pp[ind2]+pp[ind3])/2. or i < -(pp[ind2]+pp[ind3])/2. or (i < pp[ind2]/2. and i > -pp[ind2]/2.):
                 tdf[u] = 0.
 #        def lor(x, A0, x0, gamma0, A1, x1, gamma1, delta):
@@ -396,7 +531,7 @@ def _butter_pass(cutoff, fs, order=5, btype='high'):
     b, a = signal.butter(order, normal_cutoff, btype=btype, analog=False)
     return b, a
 
-def PassFilter(xdata, ydata, fs, order=5, btype='high', cutoff=None):
+def PassFilter(xdata, ydata, fs, order=5, btype='high', freq = None, cutoff=None):
     """
     Applies a high or low pass filter on the data using a butterworth digital filter design where the cutoff frequency is "the -3dB point".  
     
@@ -406,13 +541,15 @@ def PassFilter(xdata, ydata, fs, order=5, btype='high', cutoff=None):
     "order" is how steep the slope of the filter is
     "btype" is the filter type.  Can be 'high' or 'low'
     """
+    if freq == None:
+        freq = _frequency_estimation(xdata, ydata)
     if cutoff==None:
-        cutoff = _cutoff(xdata, ydata, btype, fs)
+        cutoff = _cutoff(xdata, ydata, btype, fs, ff = freq)
     b, a = _butter_pass(cutoff, fs, order=order, btype=btype)
     y = signal.filtfilt(b, a, ydata, padtype='even')
     return y
 
-def PassFilter2D(xdata, zdata, order=5, btype='high', cutoff=None):
+def PassFilter2D(xdata, zdata, order=5, btype='high', freq = None, cutoff=None):
     """
     Applies 1 dimentional PassFilter function along the 'x' axis.
     """
@@ -420,7 +557,7 @@ def PassFilter2D(xdata, zdata, order=5, btype='high', cutoff=None):
     zz = np.zeros_like(zdata)
     for u, i in enumerate(zdata):
         print u
-        zz[u] = PassFilter(xdata, i, fs=fs, order=order, btype=btype, cutoff=cutoff)
+        zz[u] = PassFilter(xdata, i, fs=fs, order=order, btype=btype, freq = freq, cutoff=cutoff)
     return zz
 
 def FourierFrequency(xdata, nPoints):
