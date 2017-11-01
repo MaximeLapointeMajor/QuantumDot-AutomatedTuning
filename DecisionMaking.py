@@ -13,62 +13,6 @@ import matplotlib.cm as cm
 import SignalProcessing as sp
 import ImageDetection as ID
 
-class DotFeature:
-    """
-
-    """
-    
-    def __init__(self, name):
-        self.name = name
-        self.glist = []
-
-    def dot_gate(self, gate):
-        self.dGate = gate
-#        self.glist.append(gate)
-
-    def reservoir_gate(self, gate):
-        self.rGate = gate
-#        self.glist.append(gate)
-
-    def add_gate(self, gate):
-        self.glist.append(gate)
-
-    def build_diagram(self, xResol, yResol):
-        self.Diagram = None
-
-class SETFeature:
-    """
-
-    """
-    
-    def __init__(self, name):
-        self.name = name
-        self.glist = []
-
-    def acc_gate(self, gate):
-        self.accGate = gate
-#        self.glist.append(gate)
-
-    def add_gate(self, gate):
-        self.glist.append(gate)
-
-
-class Device:
-    """
-    
-    """
-    
-    def __init__(self):
-        self.glist = []
-        self.flist = []
-        self.state = None
-#        self.DotResDiagram = None
-
-    def update_state(self):
-        pass #update the state of the device for voltages-tracking purposes
-
-###################################################################################################################################
-
 class Gate:
     """
     
@@ -97,10 +41,10 @@ class Diagram:
         self.xResol = xResol
         self.yResol = yResol    
     
-        xNPoints = int((self.xMax-self.xMin)/self.xResol+1)
-        yNPoints = int((self.yMax-self.yMin)/self.yResol+1)
+        xNPoints = int(round((self.xMax-self.xMin)/self.xResol)+1)
+        yNPoints = int(round((self.yMax-self.yMin)/self.yResol)+1)
         self.grid = np.zeros((yNPoints, xNPoints))
-        self.grid[0,0], self.grid[-1,0], self.grid[0,-1], self.grid[-1,-1] = -1, -1, -1, -1 #done to always have leftover and avoid fitting mistake from an empty leftover cluster in ImageDetection loop
+        self.grid[0,0], self.grid[-2,1], self.grid[1,-2], self.grid[-1,-1] = -1, -1, -1, -1 #done to always have leftover and avoid fitting mistake from an empty leftover cluster in ImageDetection loop
         self.xData = np.linspace(self.xMin, self.xMax, xNPoints)
         self.yData = np.linspace(self.yMin, self.yMax, yNPoints)
 
@@ -111,6 +55,7 @@ class Diagram:
         self._steps = []
         self.MeasWindows, self.clist, self.leftover, self.tlist, self._steps = np.array(self.MeasWindows), np.array(self.clist), np.array(self.leftover), np.array(self.tlist), np.array(self._steps)
         
+        self._proSignal = None
 
     def new_measurement(self, MeasWindow):
         self.MeasWindows, self.clist, self.leftover, self.tlist, self._steps = list(self.MeasWindows), list(self.clist), list(self.leftover), list(self.tlist), list(self._steps)
@@ -133,15 +78,19 @@ class Diagram:
         plt.imshow(self.grid, aspect='auto', cmap=cm.bone, extent=(self.xMin, self.xMax, self.yMin, self.yMax))
 
     def plot_boxes(self):
-        for u in self.MeasWindows:
-            u.ProcessedImage._proSignal._plot_box()
+        colormap = cm.RdYlBu_r
+        num_plots = np.size(self.MeasWindows)
+        colormap = ([colormap(i) for i in np.linspace(0.0, 1., num_plots)])
+        for u, i in enumerate(self.MeasWindows):
+            i.ProcessedImage._proSignal._plot_box(color=colormap[u])
 
     def _gen_pro_signal(self, _yFlip=False):
-        proSignal = sp.ProcessedSignal(self.xData, self.yData, self.grid*0.)
-        proSignal.transition.zData = deepcopy(self.grid)
+        if self._proSignal == None:
+            self._proSignal = sp.ProcessedSignal(self.xData, self.yData, self.grid*0.)
+        self._proSignal.transition.zData = deepcopy(self.grid)
         if _yFlip == True:
-            proSignal._yFlip = True
-        return proSignal
+            self._proSignal._yFlip = True
+        return self._proSignal
 
     def _gen_pro_image(self, _yFlip=False):
         proSignal = self._gen_pro_signal(_yFlip = _yFlip)
@@ -197,7 +146,7 @@ class MeasState:
     """
     def __init__(self, diag, *args, **kwargs):
         self.xRange = 0.05
-        self.yRange = 0.1
+        self.yRange = 0.12
         self.xResol = diag.xResol
         self.yResol = diag.yResol
         self._step = ''
@@ -266,6 +215,29 @@ def _meas_printer(mstate):
     mstate._update_xy()
     print "Next measurement fromx = %(xmin)s to x = %(xmax)s and y = %(ymin)s to y = %(ymax)s" %{"xmin":mstate.xmin, "xmax":mstate.xmax, "ymin":mstate.ymin, "ymax":mstate.ymax}
 
+def _meas_extraction(mstate, proSignal):
+    c0 = proSignal._datacutter_nocomputation(xstart=mstate.xmin, xstop=mstate.xmax, ystart=mstate.ymin, ystop=mstate.ymax)
+    try:
+        i0 = ID.ProcessedImage(c0)
+    except(IndexError, TypeError):
+        c0.transition.zData[1][1], c0.transition.zData[-2][-2] = -1, -1
+        i0 = ID.ProcessedImage(c0)
+    mw0 = MeasuredWindow(i0, mstate)
+    return mw0
+
+def _wrapper(diag, proSignal, _yFlip = False, numCalls = 100):
+    mstate = 1
+    ind = 0
+    while ind < numCalls:
+        print ind
+        mstate = next_step(diag, _yFlip = _yFlip)
+        if mstate == None:
+            break
+        mw = _meas_extraction(mstate, proSignal)
+        diag.new_measurement(mw)
+        ind = ind+1
+    return diag
+
 def next_step(diag, _yFlip = False):
     if np.size(diag.tlist) == 0:
         if np.size(diag.MeasWindows) == 0:
@@ -275,6 +247,8 @@ def next_step(diag, _yFlip = False):
             mstate = _find_any_transition(diag, ind=-1)
             return mstate
     else:
+        if diag.MeasWindows[-1].mstate._step == 'confirmtrans':
+            diag.update_lists(_yFlip=_yFlip)
         verif = []
         for u in diag.tlist:
             verif.append(u._tested_flag)
@@ -287,17 +261,18 @@ def next_step(diag, _yFlip = False):
             mstate = _find_any_transition(diag, ind=ind)
             return mstate
         elif np.any(verif==True):
-            if diag.MeasWindows[-1].mstate._step == 'confirmtrans' or (diag.MeasWindows[-1].mstate._step == 'goup' and np.size(diag.MeasWindows[-1].ProcessedImage.transitions) == 0):
+            if diag.MeasWindows[-1].mstate._step == 'last':
+                diag.update_lists(_yFlip = _yFlip)
+                print "last transition was found.  all that's needed is to perform voltage addition on last slice of meas."
+                return None
+            if (diag.MeasWindows[-1].mstate._step == 'goup' and np.size(diag.MeasWindows[-1].ProcessedImage.transitions) == 0):
                 diag.update_lists(_yFlip = _yFlip)
             if diag.MeasWindows[-1]._trans_found == True:
                 if diag.MeasWindows[-1].mstate.ymax < diag.yMax:
                     mstate = _goup(diag)
                     return mstate
                 else:
-                    if diag.MeasWindows[-1].mstate.xmin > diag.xMin and diag.MeasWindows[-1].mstate._step == 'goup':
-                        mstate = _goleftup(diag)
-                        return mstate
-                    if diag.MeasWindows[-1].mstate.xmin > diag.xMin and diag.MeasWindows[-1].mstate._step == 'goleft':
+                    if diag.MeasWindows[-1].mstate.xmin > diag.xMin and (diag.MeasWindows[-1].mstate._step == 'goup' or diag.MeasWindows[-1].mstate._step == 'goleft'):
                         mstate = _goleft(diag)
                         return mstate
                     else:
@@ -305,7 +280,9 @@ def next_step(diag, _yFlip = False):
                             mstate = _goright(diag)
                             return mstate
                         else:
-                            print "last transition was found.  all that's needed is to perform voltage addition on last slice of meas."
+                            diag.update_lists(_yFlip = _yFlip)
+                            mstate = _last_measurement(diag)
+                            return mstate
             elif diag.MeasWindows[-1]._trans_found == False:
                 if diag.MeasWindows[-1].mstate.xmin > diag.xMin and diag.MeasWindows[-1].mstate._step == 'goup':
                     mstate = _goleftup(diag)
@@ -318,8 +295,14 @@ def next_step(diag, _yFlip = False):
                         mstate = _goright(diag)
                         return mstate
                     else:
-                        diag.update_lists(_yFlip = _yFlip)
-                        print "last transition was found.  all that's needed is to perform voltage addition on last slice of meas."
+                        if diag.MeasWindows[-1].mstate._step == 'last':
+                            diag.update_lists(_yFlip = _yFlip)
+                            print "last transition was found.  all that's needed is to perform voltage addition on last slice of meas."
+                            return None
+                        else:
+                            diag.update_lists(_yFlip = _yFlip)
+                            mstate = _last_measurement(diag)
+                            return mstate
         elif np.any(verif==None):
             ind = np.where(verif == None)[0][0]
             diag.tlist[ind]._update_test_flag(False)
@@ -335,16 +318,17 @@ def _first_measurement(diag):
     setting = {"ymid":ymid, "xmax":xmax}
     mstate = MeasState(diag, **setting)
     mstate._update_step('init')
+    mstate._update_xy()
     return mstate
 
 def _find_any_transition(diag, ind=-1):
-    xmax = diag.MeasWindows[-1].mstate.xmin
-    ymin = diag.MeasWindows[-1].mstate.ymax
+    xmax = diag.MeasWindows[ind].mstate.xmin
+    ymin = diag.MeasWindows[ind].mstate.ymax
     setting = {"ymin":ymin, "xmax":xmax} 
     mstate = MeasState(diag, **setting)
     mstate._update_step('findanytrans')
-    mstate._update_xRange(diag.MeasWindows[-1].mstate.xRange)
-    mstate._update_yRange(diag.MeasWindows[-1].mstate.yRange)
+    mstate._update_xRange(diag.MeasWindows[ind].mstate.xRange)
+    mstate._update_yRange(diag.MeasWindows[ind].mstate.yRange)
     mstate._update_xy()
     if mstate.ymax > diag.yMax or mstate.xmin < diag.xMin:
         ind = []
@@ -362,13 +346,15 @@ def _find_any_transition(diag, ind=-1):
             ymin = diag.MeasWindows[ind[-2]].ProcessedImage._proSignal.yStop + 1.5*diag.MeasWindows[ind[-2]].mstate.yRange
             setting = {"ymin":ymin, "xmax":xmax} 
         mstate = MeasState(diag, **setting)
+        mstate._update_step('findanytrans')
+        mstate._update_xy()
         return mstate
     else:
         return mstate
 
 def _confirm_transition(diag, ind):
-    xmid = (diag.tlist[0].vStart_x + diag.tlist[0].vStop_x)/2.
-    ymid = (diag.tlist[0].vStart_y + diag.tlist[0].vStop_y)/2.
+    xmid = (diag.tlist[ind].vStart_x + diag.tlist[ind].vStop_x)/2.
+    ymid = (diag.tlist[ind].vStart_y + diag.tlist[ind].vStop_y)/2.
     setting = {"xmid":xmid, "ymid":ymid} 
     mstate = MeasState(diag, **setting)
     mstate._update_step('confirmtrans')
@@ -398,17 +384,15 @@ def _goup(diag):
     mstate._update_step('goup')
     mstate._update_xy()
     if mstate.ymax > diag.yMax:
-        mstate.ymax = diag.yMax
-        mstate.yy = 'ymax'
+        mstate.ymax, mstate.yy = diag.yMax, 'ymax'
         mstate._update_xy()
     if mstate.xmin < diag.xMin:
-        mstate.xmin = diag.xMin
-        mstate.xx = 'xmin'
+        mstate.xmin, mstate.xx = diag.xMin, 'xmin'
         mstate._update_xy()
     return mstate
 
 def _goleftup(diag):
-    xmax = diag.MeasWindows[-1].mstate.xmin
+    xmax = diag.MeasWindows[-1].mstate.xmid
     ymid = diag.MeasWindows[-1].mstate.ymax
     setting = {"xmax":xmax, "ymid":ymid} 
     mstate = MeasState(diag, **setting)
@@ -416,8 +400,10 @@ def _goleftup(diag):
     mstate._update_yRange(mstate.yRange*2)
     mstate._update_xy()
     if mstate.xmin < diag.xMin:
-        mstate.xmin = diag.xMin
-        mstate.xx = 'xmin'
+        mstate.xmin, mstate.xx = diag.xMin, 'xmin'
+        mstate._update_xy()
+    if mstate.ymax > diag.yMax:
+        mstate.ymax, mstate.yy = diag.yMax, 'ymax'
         mstate._update_xy()
     return mstate
 
@@ -429,8 +415,10 @@ def _goleft(diag):
     mstate._update_step('goleft')
     mstate._update_xy()
     if mstate.xmin < diag.xMin:
-        mstate.xmin = diag.xMin
-        mstate.xx = 'xmin'
+        mstate.xmin, mstate.xx = diag.xMin, 'xmin'
+        mstate._update_xy()
+    if mstate.ymax > diag.yMax:
+        mstate.ymax, mstate.yy = diag.yMax, 'ymax'
         mstate._update_xy()
     return mstate
 
@@ -442,8 +430,42 @@ def _goright(diag):
     mstate._update_step('goright')
     mstate._update_xy()
     if mstate.xmax > diag.xMax:
-        mstate.xmax = diag.xMax
-        mstate.xx = 'xmax'
+        mstate.xmax, mstate.xx = diag.xMax, 'xmax'
+        mstate._update_xy()
+    if mstate.ymax > diag.yMax:
+        mstate.ymax, mstate.yy = diag.yMax, 'ymax'
+        mstate._update_xy()
+    return mstate
+
+def _last_measurement(diag):
+    ymid = (diag.tlist[0].vStart_y+diag.tlist[0].vStop_y)/2.
+    xmid = (diag.tlist[0].vStart_x+diag.tlist[0].vStop_x)/2.
+    setting = {"xmid":xmid, "ymid":ymid} 
+    mstate = MeasState(diag, **setting)
+    mstate._update_xy()
+    if diag.MeasWindows[-1].mstate.yRange < .4:
+        mstate._update_yRange(.4)
+        mstate._update_xy()
+    mstate = _check_xmin(diag, mstate)
+    mstate = _check_ymax(diag, mstate)
+    xRange = 2*max([(mstate.ymax-diag.tlist[0].intercept)/diag.tlist[0].slope-mstate.xmid, (mstate.ymin-diag.tlist[0].intercept)/diag.tlist[0].slope-xmid])
+    if xRange > mstate.xRange:
+        mstate._update_xRange(diag.xResol*40 + xRange)
+    mstate._update_xy()
+    mstate = _check_xmin(diag, mstate)
+    mstate = _check_ymax(diag, mstate)
+    mstate._update_step('last')
+    return mstate
+
+def _check_xmin(diag, mstate):
+    if mstate.xmin < diag.xMin:
+        mstate.xmin, mstate.xx = diag.xMin, 'xmin'
+        mstate._update_xy()
+    return mstate
+
+def _check_ymax(diag, mstate):
+    if mstate.ymax > diag.yMax:
+        mstate.ymax, mstate.yy = diag.yMax, 'ymax'
         mstate._update_xy()
     return mstate
 
