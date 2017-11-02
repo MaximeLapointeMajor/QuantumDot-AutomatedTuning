@@ -348,6 +348,18 @@ def _find_any_transition(diag, ind=-1):
         mstate = MeasState(diag, **setting)
         mstate._update_step('findanytrans')
         mstate._update_xy()
+        mstate = _check_ymax(diag, mstate)
+        if mstate.ymin < diag.yMin:
+            ind = []
+            for u, i in enumerate(diag.MeasWindows):
+                if i.ProcessedImage._proSignal.yStart == diag.yMin:
+                    ind.append(u)
+            mstate = _check_ymin(diag, mstate)
+            if np.size(ind) != 0:
+                ind = max(ind)
+                mstate.xmax, mstate.xx = diag.MeasWindows[ind].mstate.xmin-diag.MeasWindows[ind].mstate.xRange, 'xmax'
+                mstate._update_xy()
+                mstate = _check_xmin(diag, mstate)
         return mstate
     else:
         return mstate
@@ -368,12 +380,8 @@ def _confirm_transition(diag, ind):
     if xRange > mstate.xRange:
         mstate._update_xRange(diag.xResol*40 + xRange)
     mstate._update_xy()
-    if diag.xMin > mstate.xmin:
-        mstate.xmin, mstate.xx = diag.xMin, 'xmin'
-        mstate._update_xy()
-    if diag.yMax < mstate.ymax:
-        mstate.ymax, mstate.yy = diag.yMax, 'ymax'
-        mstate._update_xy()
+    mstate = _check_xmin(diag, mstate)
+    mstate = _check_ymax(diag, mstate)
     return mstate   
 
 def _goup(diag):
@@ -383,12 +391,8 @@ def _goup(diag):
     mstate = MeasState(diag, **setting)
     mstate._update_step('goup')
     mstate._update_xy()
-    if mstate.ymax > diag.yMax:
-        mstate.ymax, mstate.yy = diag.yMax, 'ymax'
-        mstate._update_xy()
-    if mstate.xmin < diag.xMin:
-        mstate.xmin, mstate.xx = diag.xMin, 'xmin'
-        mstate._update_xy()
+    mstate = _check_xmin(diag, mstate)
+    mstate = _check_ymax(diag, mstate)
     return mstate
 
 def _goleftup(diag):
@@ -399,12 +403,8 @@ def _goleftup(diag):
     mstate._update_step('goleft')
     mstate._update_yRange(mstate.yRange*2)
     mstate._update_xy()
-    if mstate.xmin < diag.xMin:
-        mstate.xmin, mstate.xx = diag.xMin, 'xmin'
-        mstate._update_xy()
-    if mstate.ymax > diag.yMax:
-        mstate.ymax, mstate.yy = diag.yMax, 'ymax'
-        mstate._update_xy()
+    mstate = _check_xmin(diag, mstate)
+    mstate = _check_ymax(diag, mstate)
     return mstate
 
 def _goleft(diag):
@@ -414,12 +414,8 @@ def _goleft(diag):
     mstate = MeasState(diag, **setting)
     mstate._update_step('goleft')
     mstate._update_xy()
-    if mstate.xmin < diag.xMin:
-        mstate.xmin, mstate.xx = diag.xMin, 'xmin'
-        mstate._update_xy()
-    if mstate.ymax > diag.yMax:
-        mstate.ymax, mstate.yy = diag.yMax, 'ymax'
-        mstate._update_xy()
+    mstate = _check_xmin(diag, mstate)
+    mstate = _check_ymax(diag, mstate)
     return mstate
 
 def _goright(diag):
@@ -429,12 +425,8 @@ def _goright(diag):
     mstate = MeasState(diag, **setting)
     mstate._update_step('goright')
     mstate._update_xy()
-    if mstate.xmax > diag.xMax:
-        mstate.xmax, mstate.xx = diag.xMax, 'xmax'
-        mstate._update_xy()
-    if mstate.ymax > diag.yMax:
-        mstate.ymax, mstate.yy = diag.yMax, 'ymax'
-        mstate._update_xy()
+    mstate = _check_xmax(diag, mstate)
+    mstate = _check_ymax(diag, mstate)
     return mstate
 
 def _last_measurement(diag):
@@ -457,6 +449,12 @@ def _last_measurement(diag):
     mstate._update_step('last')
     return mstate
 
+def _check_xmax(diag, mstate):
+    if mstate.xmax > diag.xMax:
+        mstate.xmax, mstate.xx = diag.xMax, 'xmax'
+        mstate._update_xy()
+    return mstate
+
 def _check_xmin(diag, mstate):
     if mstate.xmin < diag.xMin:
         mstate.xmin, mstate.xx = diag.xMin, 'xmin'
@@ -466,6 +464,12 @@ def _check_xmin(diag, mstate):
 def _check_ymax(diag, mstate):
     if mstate.ymax > diag.yMax:
         mstate.ymax, mstate.yy = diag.yMax, 'ymax'
+        mstate._update_xy()
+    return mstate
+
+def _check_ymin(diag, mstate):
+    if mstate.ymin < diag.yMin:
+        mstate.ymin, mstate.yy = diag.yMin, 'ymin'
         mstate._update_xy()
     return mstate
 
