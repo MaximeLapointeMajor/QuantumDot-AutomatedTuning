@@ -145,8 +145,8 @@ class MeasState:
     
     """
     def __init__(self, diag, *args, **kwargs):
-        self.xRange = 0.05
-        self.yRange = 0.12
+        self.xRange = 0.125
+        self.yRange = 0.10
         self.xResol = diag.xResol
         self.yResol = diag.yResol
         self._step = ''
@@ -207,6 +207,11 @@ class MeasState:
         self.yRange = yRange
         self._update_xy()
 
+    def _extract_xRange(self, xx, yy):
+        pass
+
+    def _extract_yRange(self, xx, yy):
+        pass
 
     def copy(self):
         return deepcopy(self)
@@ -215,17 +220,28 @@ def _meas_printer(mstate):
     mstate._update_xy()
     print "Next measurement fromx = %(xmin)s to x = %(xmax)s and y = %(ymin)s to y = %(ymax)s" %{"xmin":mstate.xmin, "xmax":mstate.xmax, "ymin":mstate.ymin, "ymax":mstate.ymax}
 
-def _meas_extraction(mstate, proSignal):
-    c0 = proSignal._datacutter_nocomputation(xstart=mstate.xmin, xstop=mstate.xmax, ystart=mstate.ymin, ystop=mstate.ymax)
-    try:
-        i0 = ID.ProcessedImage(c0)
-    except(IndexError, TypeError):
-        c0.transition.zData[1][1], c0.transition.zData[-2][-2] = -1, -1
-        i0 = ID.ProcessedImage(c0)
-    mw0 = MeasuredWindow(i0, mstate)
-    return mw0
+def _meas_extraction(mstate, proSignal, nocomp=True):
+    if nocomp == True:
+        c0 = proSignal._datacutter_nocomputation(xstart=mstate.xmin, xstop=mstate.xmax, ystart=mstate.ymin, ystop=mstate.ymax)
+        try:
+            i0 = ID.ProcessedImage(c0)
+        except(IndexError, TypeError):
+            c0.transition.zData[1][1], c0.transition.zData[-2][-2] = -1, -1
+            i0 = ID.ProcessedImage(c0)
+        mw0 = MeasuredWindow(i0, mstate)
+        return mw0
+    elif nocomp == False:
+        c0 = proSignal.datacutter(xstart=mstate.xmin, xstop=mstate.xmax, ystart=mstate.ymin, ystop=mstate.ymax)
+        try:
+            i0 = ID.ProcessedImage(c0)
+        except(IndexError, TypeError):
+            c0.transition.zData[1][1], c0.transition.zData[-2][-2] = -1, -1
+            i0 = ID.ProcessedImage(c0)
+        mw0 = MeasuredWindow(i0, mstate)
+        return mw0
 
-def _wrapper(diag, proSignal, _yFlip = False, numCalls = 100):
+
+def _wrapper(diag, proSignal, _yFlip = False, nocomp=True, numCalls = 100):
     mstate = 1
     ind = 0
     while ind < numCalls:
@@ -233,7 +249,7 @@ def _wrapper(diag, proSignal, _yFlip = False, numCalls = 100):
         mstate = next_step(diag, _yFlip = _yFlip)
         if mstate == None:
             break
-        mw = _meas_extraction(mstate, proSignal)
+        mw = _meas_extraction(mstate, proSignal, nocomp=nocomp)
         diag.new_measurement(mw)
         ind = ind+1
     return diag
@@ -486,66 +502,6 @@ def _resolution_x(diag):
 
 def _resolution_y(diag):
     return diag.yResol
-
-def _confirm_if_last():
-    pass
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
