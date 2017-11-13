@@ -28,11 +28,13 @@ class ProcessedSignal:
             self.yStart = min(yData)
             self.yStop = max(yData)
             self.yNPoints = yData.shape[0]
+            self.yResol = (self.yStop-self.yStart)/(self.yNPoints-1)
             self.xName = 'xName'
             self.xUnit = 'xUnit'
             self.xStart = min(xData)
             self.xStop = max(xData)
             self.xNPoints = xData.shape[0]
+            self.xResol = (self.xStop-self.xStart)/(self.xNPoints-1)
             self.filename = 'filename'
             self.extension = 'extension'
             self.nAcqChan = 'nAcqChan'
@@ -57,12 +59,14 @@ class ProcessedSignal:
             self.yStart = Nanofile.yStart
             self.yStop = Nanofile.yStop
             self.yNPoints = Nanofile.yNPoints
+            self.yResol = abs(self.yStop-self.yStart)/(self.yNPoints-1)
             self.yData = yData
             self.xName = Nanofile.xName
             self.xUnit = Nanofile.xUnit
             self.xStart = Nanofile.xStart
             self.xStop = Nanofile.xStop
             self.xNPoints = Nanofile.xNPoints
+            self.xResol = abs(self.xStop-self.xStart)/(self.xNPoints-1)
             self.xData = xData
             self.filename = Nanofile.filename
             self.extension = Nanofile.extension
@@ -148,50 +152,58 @@ class ProcessedSignal:
 
     def datacutter(self, plot=False, xstart=None, xstop=None, ystart=None, ystop=None, freq=None):
         cut = deepcopy(self._Nanofile)
-        if self._yFlip == True:
-            data = np.zeros_like(cut.data)
-            for u, i in enumerate(data):
-                for j, k in enumerate(i):
-                    data[u][-j-1] = cut.data[u][j]
-            self.data = deepcopy(data)
+#        if self._yFlip == True:
+#            data = np.zeros_like(cut.data)
+#            for u, i in enumerate(data):
+#                for j, k in enumerate(i):
+#                    data[u][-j-1] = cut.data[u][j]
+#            self.data = deepcopy(data)
         if self.xStart < self.xStop:
-            xmax_ind = sum(1 for i in abs(cut.xData) if i > abs(xstop))
-            xmin_ind = sum(1 for i in abs(cut.xData) if i < abs(xstart))
+            xmax_ind = sum(1 for i in abs(cut.xData) if round(i, 6) > abs(xstop))
+            xmin_ind = sum(1 for i in abs(cut.xData) if round(i, 6) < abs(xstart))
             cut.xData = cut.xData[xmin_ind:][:cut.xNPoints-xmin_ind-xmax_ind]
             cut.data = np.zeros((cut.nAcqChan, cut.yNPoints, cut.xNPoints-xmax_ind-xmin_ind))
             for u, i in enumerate(self.data):
                 cut.data[u] = i.T[xmin_ind:][:cut.xNPoints-xmin_ind-xmax_ind].T
         else:
-            xmax_ind = sum(1 for i in abs(cut.xData) if i > abs(xstop))
-            xmin_ind = sum(1 for i in abs(cut.xData) if i < abs(xstart))
+            xmax_ind = sum(1 for i in abs(cut.xData) if round(i, 6) > abs(xstop))
+            xmin_ind = sum(1 for i in abs(cut.xData) if round(i, 6) < abs(xstart))
             cut.xData = cut.xData[xmax_ind:][:cut.xNPoints-xmin_ind-xmax_ind]
             cut.data = np.zeros((cut.nAcqChan, cut.yNPoints, cut.xNPoints-xmax_ind-xmin_ind))
             for u, i in enumerate(self.data):
                 cut.data[u] = i.T[xmax_ind:][:cut.xNPoints-xmin_ind-xmax_ind].T
         cut.xNPoints, cut.xStart, cut.xStop = cut.xData.size, cut.xData[0], cut.xData[-1]
         if self.yStart < self.yStop:
-            ymax_ind = sum(1 for i in abs(cut.yData) if i > abs(ystop))
-            ymin_ind = sum(1 for i in abs(cut.yData) if i < abs(ystart))
+            ymax_ind = sum(1 for i in abs(cut.yData) if round(i, 6) > abs(ystop))
+            ymin_ind = sum(1 for i in abs(cut.yData) if round(i, 6) < abs(ystart))
             cut.yData = cut.yData[ymin_ind:][:cut.yNPoints-ymin_ind-ymax_ind]
             cut2 = deepcopy(cut)
             cut.data = np.zeros((cut2.nAcqChan, cut2.yNPoints-ymax_ind-ymin_ind, cut2.xNPoints))
-            for u, i in enumerate(cut2.data):
-                cut.data[u] = i[ymin_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
+            if self._yFlip == True:
+                for u, i in enumerate(cut2.data):
+                    cut.data[u] = i[ymax_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
+            else:
+                for u, i in enumerate(cut2.data):
+                    cut.data[u] = i[ymin_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
         else:
-            ymax_ind = sum(1 for i in abs(cut.yData) if i > abs(ystop))
-            ymin_ind = sum(1 for i in abs(cut.yData) if i < abs(ystart))
-            cut.yData = cut.yData[ymax_ind:][:cut.yNPoints-ymin_ind-ymax_ind]
+            ymax_ind = sum(1 for i in abs(cut.yData) if round(i, 6) > abs(ystop))
+            ymin_ind = sum(1 for i in abs(cut.yData) if round(i, 6) < abs(ystart))
+            cut.yData = cut.yData[ymin_ind:][:cut.yNPoints-ymin_ind-ymax_ind]
             cut2 = deepcopy(cut)
             cut.data = np.zeros((cut2.nAcqChan, cut2.yNPoints-ymax_ind-ymin_ind, cut2.xNPoints))
-            for u, i in enumerate(cut2.data):
-                cut.data[u] = i[ymax_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
+            if self._yFlip == True:
+                for u, i in enumerate(cut2.data):
+                    cut.data[u] = i[ymax_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
+            else:
+                for u, i in enumerate(cut2.data):
+                    cut.data[u] = i[ymin_ind:][:cut2.yNPoints-ymin_ind-ymax_ind]
         cut.yNPoints, cut.yStart, cut.yStop = cut.yData.size, cut.yData[0], cut.yData[-1]
-        if self._yFlip == True:
-            data = np.zeros_like(cut.data)
-            for u, i in enumerate(data):
-                for j, k in enumerate(i):
-                    data[u][-j-1] = cut.data[u][j]
-            cut.data = deepcopy(data)
+#        if self._yFlip == True:
+#            data = np.zeros_like(cut.data)
+#            for u, i in enumerate(data):
+#                for j, k in enumerate(i):
+#                    data[u][-j-1] = cut.data[u][j]
+#            cut.data = deepcopy(data)
         if plot == True:
             plt.figure()
             cut.plot()
@@ -432,13 +444,13 @@ def _cutoff(xdata, ydata, btype, fs, ff):
     The cutoff frequency is calculated using the peak and gamma of the double-Lorentzians.  (x0-gamma) or (x0+gamma) depending on if you are applying a high or low pass filter.
     """
     try:
-        print ff
+#        print ff
         nPts = int(1./(((xdata.max()-xdata.min())/xdata.shape[0])*(ff/10.)))
         if nPts%2 == 0:
             nPts = nPts + 1
         if nPts < xdata.shape[0]:
             nPts = xdata.shape[0]
-        print nPts
+#        print nPts
         window = np.hanning(ydata.shape[0])
         freq = FourierFrequency(xdata, nPts)
         index = np.argsort(freq)
@@ -450,30 +462,9 @@ def _cutoff(xdata, ydata, btype, fs, ff):
 #        mm = np.array(np.array(mm).T[0])#, np.array(np.array(mm).T[1])
         ind = np.where(pp == min(abs(pp)))[0][0]
         ind2 = np.where(hh == max(hh[(ind+1):]))[0][0]
-#        indmin = np.where(mm == min(abs(mm)))[0][0]
-#        ind2, ind3 = ind+1, ind+2
-#        while hh[ind2] < max(hh[(ind+1):]):
-#            ind2, ind3 = ind2+1, ind3+1
-#        while hh[ind3]<hh[ind3+1]:
-#            ind3 = ind3+1
         for u, i in enumerate(freq):
             if i > abs(pp[ind2])*1.5 or i < -abs(pp[ind2])*1.5 or (i < abs(pp[ind2])/2. and i > -abs(pp[ind2])/2.) or (tdf[u] > hh[ind2]*1.05): #(abs(i) < abs(mm[indmin])) or 
-#            if i > (pp[ind2]+pp[ind3])/2. or i < -(pp[ind2]+pp[ind3])/2. or (i < pp[ind2]/2. and i > -pp[ind2]/2.):
                 tdf[u] = 0.
-#        def lor(x, A0, x0, gamma0, A1, x1, gamma1, delta):
-#            return A0*(1/np.pi)*(gamma0/2)/((x-x0)**2+(gamma0/2)**2)+A0*(1/np.pi)*(gamma0/2)/((x+x0)**2+(gamma0/2)**2)+A1*(1/np.pi)*(gamma1/2)/((x+x1)**2+(gamma1/2)**2)
-#        lmod = lmf.Model(lor)
-#        lmod.make_params()
-#        lmod.set_param_hint('A0', value=max(tdf)/(2.*np.pi), min=max(tdf)/1000.)
-#        lmod.set_param_hint('A1', value=max(tdf)/(2*np.pi), min=0.)
-#        lmod.set_param_hint('gamma1', value=0.1, min=0.)
-#        lmod.set_param_hint('x0', value=pp[ind+1], min=pp-.0001, max=pp+.0001)
-#        lmod.set_param_hint('x1', value=0.)
-#        lmod.set_param_hint('delta', value=10., min=0.)
-#        lmod.set_param_hint('gamma0', value=1., min=0.001, expr='-delta-gamma1+x0')
-#        result = lmod.fit(tdf[index], x=freq[index])
-#        print result.values.get('x0')-result.values.get('gamma0')
-#        tdf2 = tdf-lor(freq, 0., result.values.get('x0'), result.values.get('gamma0'), result.values.get('A1'), result.values.get('x1'), result.values.get('gamma1'), result.values.get('delta'))
         def lor2(x, A0, x0, gamma0):
             return A0*(1/np.pi)*(gamma0/2)/((x-x0)**2+(gamma0/2)**2)+A0*(1/np.pi)*(gamma0/2)/((x+x0)**2+(gamma0/2)**2)
         lmod2 = lmf.Model(lor2)
@@ -482,32 +473,16 @@ def _cutoff(xdata, ydata, btype, fs, ff):
         lmod2.set_param_hint('x0', value=abs(pp[ind2]), min=0.)
         lmod2.set_param_hint('gamma0', value=1., min=0.)
         result2 = lmod2.fit(tdf[index], x=freq[index])
-#        print result2.values.get('x0')-result2.values.get('gamma0')
-        print result2.values.get('x0'), result2.values.get('gamma0')
-#        ff = np.linspace(-1000., 1000., 10001)
-#        plt.plot(ff, lor2(ff, result2.values.get('A0'), result2.values.get('x0'), result2.values.get('gamma0'), result2.values.get('delta')))
+#        print result2.values.get('x0'), result2.values.get('gamma0')
         if btype=='high':
-#            if result2.values.get('x0')-result2.values.get('gamma0') > 3*result.values.get('gamma1'):
-#                if result2.values.get('x0')-result2.values.get('gamma0') > 0.:
-#                    print "freq: ", result2.values.get('x0')-result2.values.get('gamma0')
             if result2.values.get('x0')-result2.values.get('gamma0') > 0.:
-                print "frequency: ", result2.values.get('x0')-result2.values.get('gamma0')
+#                print "frequency: ", result2.values.get('x0')-result2.values.get('gamma0')
                 if hh[ind2] != max(hh[(ind+1):]):
                     print "False", " maximum", "\n", "\n", "\n"
                 return result2.values.get('x0')-result2.values.get('gamma0')
             else:
-                print "failed: 0"
+#                print "failed: 0"
                 return 0.
-#                else:
-#                    print "freq: ", 0.
-#                    return 0.
-#            else:
-#                if 3*result.values.get('gamma1') > 0.:
-#                    print "failed: freq: ", 3*result.values.get('gamma1')
-#                    return 3*result.values.get('gamma1')
-#                else: 
-#                    print "failed: freq: ", 0.
-#                    return 0.
         elif btype=='low':
             return result2.values.get('x0')+result2.values.get('gamma0')
     except Exception:
@@ -525,7 +500,7 @@ def _butter_pass(cutoff, fs, order=5, btype='high'):
     """
     nyq = 0.5*fs
     normal_cutoff = cutoff/nyq
-    print "normalized cutoff: ", normal_cutoff
+#    print "normalized cutoff: ", normal_cutoff
     if normal_cutoff >= 1.:
         normal_cutoff = 1.
     b, a = signal.butter(order, normal_cutoff, btype=btype, analog=False)
@@ -556,7 +531,7 @@ def PassFilter2D(xdata, zdata, order=5, btype='high', freq = None, cutoff=None):
     fs = (xdata.shape[0]-1)/abs(xdata.max()-xdata.min())
     zz = np.zeros_like(zdata)
     for u, i in enumerate(zdata):
-        print u
+#        print u
         zz[u] = PassFilter(xdata, i, fs=fs, order=order, btype=btype, freq = freq, cutoff=cutoff)
     return zz
 
