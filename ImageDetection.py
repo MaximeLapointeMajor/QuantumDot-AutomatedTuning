@@ -80,13 +80,17 @@ class ProcessedImage:
         self._sort_transitions()
         self._generate_slope_int()
 
+    def TransitionWidth(self, axis='y'):
+        for u in self.transitions:
+            u.transition_width(axis = axis)
+
     def PlotClusters(self, color='r'):
         for u in self.clusters[:-1]:
             u.plot(color=color)
 
-    def PlotTransitions(self, color='b'):
+    def PlotTransitions(self, color='b', *args, **kwargs):
         for u in self.transitions:
-            u.plot(color=color)
+            u.plot(color=color, *args, **kwargs)
 
     def _reorganizeClusters(self):
         for u, i in enumerate(self.transitions):
@@ -389,6 +393,30 @@ class Transition:
         self.mean_theta = np.mean(mean_theta)
 
         self._tested_flag = None
+
+    def transition_width(self, axis='y'):
+        if axis == 'y':
+            cmin, cmax = min(self.ccy), max(self.ccy)
+            v0 = max([self._proSignal.yStart, self._proSignal.yStop])
+            vmax, vmin = v0-(cmin*self._proSignal.yResol), v0-(cmax*self._proSignal.yResol)
+            vv = np.linspace(vmin, vmax, int(abs(cmax-cmin))+1)
+            count = np.zeros_like(vv)
+            for i in self.ccy:
+                count[int(i-cmin)] = count[int(i-cmin)]+1             
+        elif axis == 'x':
+            cmin, cmax = min(self.ccx), max(self.ccx)
+            v0 = min([self._proSignal.xStart, self._proSignal.xStop])
+            vmin, vmax = v0+(cmin*self._proSignal.xResol), v0+(cmax*self._proSignal.xResol)
+            vv = np.linspace(vmin, vmax, int(abs(cmax-cmin))+1)
+            count = np.zeros_like(vv)
+            for i in self.ccx:
+                count[int(i-cmin)] = count[int(i-cmin)]+1
+        self.width = np.array((vv, count))
+        self.avg_width = np.mean(count)
+        self.std_width = np.std(count)
+        self.max_width = max(count)
+        self.num_0_width = sum(1 for i in count if i == 0)
+#        return vv, count
 
     def _update_test_flag(self, state=True):
         self._tested_flag = state
