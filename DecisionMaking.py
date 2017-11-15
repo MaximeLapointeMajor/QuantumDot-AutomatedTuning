@@ -493,8 +493,13 @@ def _confirm_transition(diag, proSignal, ind):
     else:
         mstate._update_xRange(xRange)
     mstate._update_xy()
+    mstate = _check_xmax(diag, mstate)
+    if mstate.xmax == diag.xMax:
+        mstate.xmax, mstate.xx = diag.xMax-diag.xResol, 'xmax'
+        mstate._update_xy()
     mstate = _check_xmin(diag, mstate)
     mstate = _check_ymax(diag, mstate)
+    mstate = _check_ymin(diag, mstate)
     return mstate   
 
 def _goup(diag, proSignal):
