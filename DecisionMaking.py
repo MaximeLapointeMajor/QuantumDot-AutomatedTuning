@@ -440,15 +440,21 @@ def _find_any_transition(diag, proSignal, ind=-1):
         if np.size(ind) == 1:
             ymin = diag.MeasWindows[ind[-1]].ProcessedImage._proSignal.yStop + 1.5*diag.MeasWindows[ind[-1]].mstate.yRange
             setting = {"ymin":ymin, "xmax":xmax} 
+            mstate = MeasState(diag, **setting)
+            xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymin)
+            yRange = _extract_yRange(diag, proSignal, mstate.xmax, mstate.ymin)
         elif np.size(ind)%2 == 0:
             ymax = diag.MeasWindows[ind[-2]].ProcessedImage._proSignal.yStart - 1.5*diag.MeasWindows[ind[-2]].mstate.yRange
             setting = {"ymax":ymax, "xmax":xmax} 
+            mstate = MeasState(diag, **setting)
+            xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymax)
+            yRange = _extract_yRange(diag, proSignal, mstate.xmax, mstate.ymax)
         else:
             ymin = diag.MeasWindows[ind[-2]].ProcessedImage._proSignal.yStop + 1.5*diag.MeasWindows[ind[-2]].mstate.yRange
             setting = {"ymin":ymin, "xmax":xmax} 
-        mstate = MeasState(diag, **setting)
-        xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymin)
-        yRange = _extract_yRange(diag, proSignal, mstate.xmax, mstate.ymin)
+            mstate = MeasState(diag, **setting)
+            xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymin)
+            yRange = _extract_yRange(diag, proSignal, mstate.xmax, mstate.ymin)
         mstate._update_xRange(xRange)
         mstate._update_yRange(yRange)
         mstate._update_step('findanytrans')
@@ -613,9 +619,3 @@ def _resolution_x(diag):
 
 def _resolution_y(diag):
     return diag.yResol
-
-
-
-
-
-
