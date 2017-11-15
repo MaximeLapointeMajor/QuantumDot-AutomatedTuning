@@ -414,18 +414,21 @@ def _frequency_estimation(xdata, ydata):
     for u, i in enumerate(mmin[:-1]):
         delta.append(mmin[u+1,0]-mmin[u,0])
 
-    avg = np.mean(delta)
-    std = np.sqrt(np.var(delta))
+    if np.size(delta) == 0:
+        ff = None
+    else:
+        avg = np.mean(delta)
+        std = np.sqrt(np.var(delta))
 
-    for u, i in enumerate(delta):
-        if i < avg-2*std or i > avg+2*std:
-            ind.append(u)
+        for u, i in enumerate(delta):
+            if i < avg-2*std or i > avg+2*std:
+                ind.append(u)
 
-    index = np.argsort(-np.array(ind))
-    for u in index:
-        delta.pop(ind[u])
+        index = np.argsort(-np.array(ind))
+        for u in index:
+            delta.pop(ind[u])
 
-    ff = 1./np.mean(delta)
+        ff = 1./np.mean(delta)
 
     # verify the length of measure > (mmax.shape[0]-1) * ff -- si on trouve plein de maximums qu'on finit par discarter, on doit augmenter lookahead
     # verify the resolution*2. < np.mean(delta) -- si on sonde moins de 2 points par cycle, on a un prob
@@ -445,7 +448,10 @@ def _cutoff(xdata, ydata, btype, fs, ff):
     """
     try:
 #        print ff
-        nPts = int(1./(((xdata.max()-xdata.min())/xdata.shape[0])*(ff/10.)))
+        if ff != None:
+            nPts = int(1./(((xdata.max()-xdata.min())/xdata.shape[0])*(ff/10.)))
+        else:
+            nPts = 0
         if nPts%2 == 0:
             nPts = nPts + 1
         if nPts < xdata.shape[0]:
