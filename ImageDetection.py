@@ -1100,7 +1100,7 @@ def _rrel(nSegments, xPixels, yPixels):
     yPixels \t resolution of the image along the y axis in number of pixels
     """
     d = float(nSegments)/float(xPixels*yPixels)
-    return 1.5*np.sqrt(1./(np.pi*d))
+    return 1.*np.sqrt(1./(np.pi*d))
     
 def _distance(end1, end2):
     """
