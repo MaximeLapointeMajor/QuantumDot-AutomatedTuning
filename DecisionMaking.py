@@ -153,28 +153,35 @@ class MeasState:
         for u in kwargs.items():
             if u[0] == 'xmin':
                 self.xx = u[0]
-                self.xst = u[1]
-                self.xmin = u[1]
+                value = _place_on_xgrid(diag, u[1])
+                self.xst = value
+                self.xmin = value
             elif u[0] == 'xmid':
                 self.xx = u[0]
-                self.xst = u[1]
-                self.xmid = u[1]
+                value = _place_on_xgrid(diag, u[1])
+                self.xst = value
+                self.xmid = value
             elif u[0] == 'xmax':
                 self.xx = u[0]
-                self.xst = u[1]
-                self.xmax = u[1]
+                value = _place_on_xgrid(diag, u[1])
+                self.xst = value
+                self.xmax = value
             if u[0] == 'ymin':
                 self.yy = u[0]
-                self.yst = u[1]
-                self.ymin = u[1]
+                value = _place_on_ygrid(diag, u[1])
+                self.yst = value
+                self.ymin = value
             elif u[0] == 'ymid':
                 self.yy = u[0]
-                self.yst = u[1]
-                self.ymid = u[1]
+                value = _place_on_ygrid(diag, u[1])
+                self.yst = value
+                self.ymid = value
             elif u[0] == 'ymax':
                 self.yy = u[0]
-                self.yst = u[1]
-                self.ymax = u[1]
+                value = _place_on_ygrid(diag, u[1])
+                self.yst = value
+                self.ymax = value
+
 
     def _update_step(self, step):
         self._step = step
@@ -198,6 +205,7 @@ class MeasState:
         elif self.yy == 'ymax':
             self.ymin = self.ymax - self.yRange
             self.ymid = self.ymax - self.yRange/2.
+        self._update_NPoints()
 
     def _update_xRange(self, xRange):
         self.xRange = xRange
@@ -207,8 +215,26 @@ class MeasState:
         self.yRange = yRange
         self._update_xy()
 
+    def _update_NPoints(self):
+        self.xNPoints = int(round(self.xRange/self.xResol))
+        self.yNPoints = int(round(self.yRange/self.yResol))
+
     def copy(self):
         return deepcopy(self)
+
+def _place_on_xgrid(diag, data):
+    corr = (data-diag.xMin)%diag.xResol
+    if corr < diag.xResol/2:
+        return data-(data-diag.xMin)%diag.xResol
+    else:
+        return data-(data-diag.xMin)%diag.xResol+diag.xResol
+
+def _place_on_ygrid(diag, data):
+    corr = (data-diag.yMin)%diag.yResol
+    if corr < diag.yResol/2:
+        return data-(data-diag.yMin)%diag.yResol
+    else:
+        return data-(data-diag.yMin)%diag.yResol+diag.yResol
 
 def _extract_xRange(diag, proSignal, xx, yy):
     maxrange = diag.xMax-diag.xMin
@@ -223,14 +249,15 @@ def _extract_xRange(diag, proSignal, xx, yy):
             if ff == None:
                 raise
             else:
-                return 2./ff + 40*diag.xResol
+                xNPoints = round((2./ff)/diag.xResol)+1
+                return (xNPoints+40)*diag.xResol
         except:
             s = s+.02
             i = i+1
 
 def _extract_yRange(diag, proSignal, xx, yy):
 
-    return 24.*diag.yResol
+    return 40.*diag.yResol
 ##This part had to be removed because we dont sweep along the y axis & telegraphic noise messes the entire yFreq estimation
 #    maxrange = diag.yMax - diag.yMin
 #    i = 0
@@ -246,7 +273,8 @@ def _extract_yRange(diag, proSignal, xx, yy):
 #                raise
 #            else:
 #                if .5/ff > 24.*diag.yResol:
-#                    return .5/ff
+#                    yNPoints = round((5./ff)/diag.yResol)+1
+#                    return (yNPoints)*diag.yResol
 #                else:
 #                    return 24.*diag.yResol     
 #        except:
@@ -503,7 +531,7 @@ def _confirm_transition(diag, proSignal, ind):
     return mstate   
 
 def _goup(diag, proSignal):
-    ymin = diag.MeasWindows[-1].mstate.ymax
+    ymin = diag.MeasWindows[-1].mstate.ymax+diag.MeasWindows[-1].mstate.xRange/2.
     xmid = (ymin-diag.MeasWindows[-1].ProcessedImage.transitions[0].intercept)/diag.MeasWindows[-1].ProcessedImage.transitions[0].slope
     setting = {"xmid":xmid, "ymin":ymin} 
     mstate = MeasState(diag, **setting)
