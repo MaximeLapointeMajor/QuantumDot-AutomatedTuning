@@ -236,7 +236,7 @@ def _place_on_ygrid(diag, data):
     else:
         return data-(data-diag.yMin)%diag.yResol+diag.yResol
 
-def _extract_xRange(diag, proSignal, xx, yy):
+def _extract_xRange(diag, proSignal, xx, yy, iterindex):
     maxrange = diag.xMax-diag.xMin
     i = 0
     s = .1
@@ -244,7 +244,7 @@ def _extract_xRange(diag, proSignal, xx, yy):
         if s > maxrange:
             return maxrange
         try:
-            xData, xarray = _extract_xaxis(diag, proSignal, xx, yy, s)
+            xData, xarray = _extract_xaxis(diag, proSignal, xx, yy, s, iterindex)
             ff = sp._frequency_estimation(xData, xarray)
             if ff == None:
                 raise
@@ -255,7 +255,7 @@ def _extract_xRange(diag, proSignal, xx, yy):
             s = s+.02
             i = i+1
 
-def _extract_yRange(diag, proSignal, xx, yy):
+def _extract_yRange(diag, proSignal, xx, yy, iterindex):
 
     return 40.*diag.yResol
 ##This part had to be removed because we dont sweep along the y axis & telegraphic noise messes the entire yFreq estimation
@@ -266,7 +266,7 @@ def _extract_yRange(diag, proSignal, xx, yy):
 #        if s > maxrange:
 #            return maxrange
 #        try:
-#            yData, yarray = _extract_xaxis(diag, proSignal, xx, yy, s)
+#            yData, yarray = _extract_xaxis(diag, proSignal, xx, yy, s, iterindex)
 #            index = np.argsort(yData)
 #            ff = sp._frequency_estimation(yData[index], yarray[index])
 #            if ff == None:
@@ -281,7 +281,7 @@ def _extract_yRange(diag, proSignal, xx, yy):
 #            s = s+.02
 #            i = i+1
 
-def _extract_xaxis(diag, proSignal, xx, yy, xRange):
+def _extract_xaxis(diag, proSignal, xx, yy, xRange, iterindex):
     xmin = xx-xRange/2
     xmax = xx+xRange/2
     if xmax > diag.xMax:
@@ -298,9 +298,14 @@ def _extract_xaxis(diag, proSignal, xx, yy, xRange):
     indy = int(round((diag.yMax-yy)/diag.yResol))
     xarray = proSignal.zData.zData[indy][:indxmax][indxmin:]
     xx = np.linspace(xmin, xmax, int(round((xmax-xmin)/diag.xResol))+1)
+    _generate_xaxis_file(xx, xarray, 'xaxisSweep%(index).5i'%{"index":iterindex})
     return xx, xarray
 
-def _extract_yaxis(diag, proSignal, xx, yy, yRange):
+def _generate_xaxis_file(xx, xarray, filename):
+    xsave = np.array((xx, xarray))
+    np.savetxt(filename+'.txt', xsave.T, fmt='%.10e')
+
+def _extract_yaxis(diag, proSignal, xx, yy, yRange, iterindex):
     xx = _find_nearest(proSignal.xData, xx)
     ymin = yy-yRange/2
     ymax = yy+yRange/2
@@ -319,7 +324,12 @@ def _extract_yaxis(diag, proSignal, xx, yy, yRange):
     for u in range(indymax, indymin):
         yarray.append(proSignal.zData.zData[u][indx])
     yy = np.linspace(ymax, ymin, int(round((ymax-ymin)/diag.yResol))+1)
+    _generate_yaxis_file(yy, yarray, 'yaxisSweep%(index).5i'%{"index":iterindex})
     return yy, np.array(yarray)
+
+def _generate_yaxis_file(yy, yarray, filename):
+    ysave = np.array((yy, yarray))
+    np.savetxt(filename+'.txt', ysave.T, fmt='%.10e')
 
 def _find_nearest(array,value):
     idx = (np.abs(array-value)).argmin()
@@ -329,7 +339,7 @@ def _meas_printer(mstate):
     mstate._update_xy()
     print "Next measurement fromx = %(xmin)s to x = %(xmax)s and y = %(ymin)s to y = %(ymax)s" %{"xmin":mstate.xmin, "xmax":mstate.xmax, "ymin":mstate.ymin, "ymax":mstate.ymax}
 
-def _meas_extraction(mstate, proSignal, nocomp=True):
+def _meas_extraction(mstate, proSignal, iterindex, nocomp=True):
     if nocomp == True:
         c0 = proSignal._datacutter_nocomputation(xstart=mstate.xmin, xstop=mstate.xmax, ystart=mstate.ymin, ystop=mstate.ymax)
         try:
@@ -341,6 +351,7 @@ def _meas_extraction(mstate, proSignal, nocomp=True):
         return mw0
     elif nocomp == False:
         c0 = proSignal.datacutter(xstart=mstate.xmin, xstop=mstate.xmax, ystart=mstate.ymin, ystop=mstate.ymax)
+        _generate_meas_file(c0, '2DSweeperMeas%(index).5i'%{"index":iterindex})
         try:
             i0 = ID.ProcessedImage(c0)
         except(IndexError, TypeError):
@@ -349,27 +360,48 @@ def _meas_extraction(mstate, proSignal, nocomp=True):
         mw0 = MeasuredWindow(i0, mstate)
         return mw0
 
+def _generate_meas_file(proSignal, filename):
+    hh = []
+    hh.append('Experiment\tSweeper')
+    hh.append('Sweep channel: Name\t%(name)s (%(unit)s)'%{"name":proSignal.xName, "unit":proSignal.xUnit})
+    hh.append('Sweep channel: Start\t%(Start)s'%{"Start":proSignal.xStart})
+    hh.append('Sweep channel: Stop\t%(Stop)s'%{"Stop":proSignal.xStop})
+    hh.append('Sweep channel: Points\t%(xNPoints)s'%{"xNPoints":proSignal.xNPoints})
+    hh.append('Step channel 1: Name\t%(name)s (%(unit)s)'%{"name":proSignal.yName, "unit":proSignal.yUnit})
+    hh.append('Step channel 1: Start\t%(Start)s'%{"Start":proSignal.yStart})
+    hh.append('Step channel 1: Stop\t%(Stop)s'%{"Stop":proSignal.yStop})
+    hh.append('Step channel 1: Points\t%(yNPoints)s'%{"yNPoints":proSignal.yNPoints})
+    hh.append('Acquire channels\t%(acqName)s (%(acqUnit)s)'%{"acqName":proSignal.acqName, "acqUnit":proSignal.acqUnit})
+    hh.append('[DATA]')
+    header=''
+    for u in hh:
+        header = header+u+'\n'
+    data = proSignal.data[proSignal.acqIndex]
+    data = list(data)
+    data.append(proSignal.xData)
+    data = np.array(data).T
+    np.savetxt(filename+'.txt', data, fmt='%.10e', header=header, comments='')
 
 def _wrapper(diag, proSignal, _yFlip = False, nocomp=True, numCalls = 100):
     mstate = 1
     ind = 0
     while ind < numCalls:
         print ind
-        mstate = next_step(diag, proSignal, _yFlip = _yFlip)
+        mstate = next_step(diag, proSignal, iterindex = ind, _yFlip = _yFlip)
         if mstate == None:
             break
-        mw = _meas_extraction(mstate, proSignal, nocomp=nocomp)
+        mw = _meas_extraction(mstate, proSignal, iterindex=ind, nocomp=nocomp)
         diag.new_measurement(mw)
         ind = ind+1
     return diag
 
-def next_step(diag, proSignal, _yFlip = False):
+def next_step(diag, proSignal, iterindex, _yFlip = False):
     if np.size(diag.tlist) == 0:
         if np.size(diag.MeasWindows) == 0:
-            mstate = _first_measurement(diag, proSignal)
+            mstate = _first_measurement(diag, proSignal, iterindex)
             return mstate
         else:
-            mstate = _find_any_transition(diag, proSignal, ind=-1)
+            mstate = _find_any_transition(diag, proSignal, iterindex, ind=-1)
             return mstate
     else:
         if diag.MeasWindows[-1].mstate._step == 'confirmtrans':
@@ -383,7 +415,7 @@ def next_step(diag, proSignal, _yFlip = False):
                 ind = max(np.where(diag._steps == 'findanytrans')[0])
             else:
                 ind = np.where(diag._steps == 'init')[0][0]
-            mstate = _find_any_transition(diag, proSignal, ind=ind)
+            mstate = _find_any_transition(diag, proSignal, iterindex, ind=ind)
             return mstate
         elif np.any(verif==True):
             if diag.MeasWindows[-1].mstate._step == 'last':
@@ -394,30 +426,30 @@ def next_step(diag, proSignal, _yFlip = False):
                 diag.update_lists(_yFlip = _yFlip)
             if diag.MeasWindows[-1]._trans_found == True:
                 if diag.MeasWindows[-1].mstate.ymax < diag.yMax:
-                    mstate = _goup(diag, proSignal)
+                    mstate = _goup(diag, proSignal, iterindex)
                     return mstate
                 else:
                     if diag.MeasWindows[-1].mstate.xmin > diag.xMin and (diag.MeasWindows[-1].mstate._step == 'goup' or diag.MeasWindows[-1].mstate._step == 'goleft'):
-                        mstate = _goleft(diag, proSignal)
+                        mstate = _goleft(diag, proSignal, iterindex)
                         return mstate
                     else:
                         if diag.MeasWindows[-1].mstate.xmax < diag.xMax:
-                            mstate = _goright(diag, proSignal)
+                            mstate = _goright(diag, proSignal, iterindex)
                             return mstate
                         else:
                             diag.update_lists(_yFlip = _yFlip)
-                            mstate = _last_measurement(diag, proSignal)
+                            mstate = _last_measurement(diag, proSignal, iterindex)
                             return mstate
             elif diag.MeasWindows[-1]._trans_found == False:
                 if diag.MeasWindows[-1].mstate.xmin > diag.xMin and diag.MeasWindows[-1].mstate._step == 'goup':
-                    mstate = _goleftup(diag, proSignal)
+                    mstate = _goleftup(diag, proSignal, iterindex)
                     return mstate
                 if diag.MeasWindows[-1].mstate.xmin > diag.xMin and diag.MeasWindows[-1].mstate._step == 'goleft':
-                    mstate = _goleft(diag, proSignal)
+                    mstate = _goleft(diag, proSignal, iterindex)
                     return mstate
                 else:
                     if diag.MeasWindows[-1].mstate.xmax < diag.xMax:
-                        mstate = _goright(diag, proSignal)
+                        mstate = _goright(diag, proSignal, iterindex)
                         return mstate
                     else:
                         if diag.MeasWindows[-1].mstate._step == 'last':
@@ -426,36 +458,36 @@ def next_step(diag, proSignal, _yFlip = False):
                             return None
                         else:
                             diag.update_lists(_yFlip = _yFlip)
-                            mstate = _last_measurement(diag, proSignal)
+                            mstate = _last_measurement(diag, proSignal, iterindex)
                             return mstate
         elif np.any(verif==None):
             ind = np.where(verif == None)[0][0]
             diag.tlist[ind]._update_test_flag(False)
-            mstate = _confirm_transition(diag, proSignal, ind)
+            mstate = _confirm_transition(diag, proSignal, iterindex, ind)
             return mstate
 
-def _first_measurement(diag, proSignal):
+def _first_measurement(diag, proSignal, iterindex):
     ymid = (diag.yMin+diag.yMax)/2.
     xmax = diag.xMax
     setting = {"ymid":ymid, "xmax":xmax}
     mstate = MeasState(diag, **setting)
     mstate._update_step('init')
     mstate._update_xy()
-    xRange = _extract_xRange(diag, proSignal, mstate.xmid, mstate.ymid)
-    yRange = _extract_yRange(diag, proSignal, mstate.xmid, mstate.ymid)
+    xRange = _extract_xRange(diag, proSignal, mstate.xmid, mstate.ymid, iterindex)
+    yRange = _extract_yRange(diag, proSignal, mstate.xmid, mstate.ymid, iterindex)
     mstate._update_xRange(xRange)
     mstate._update_yRange(yRange)
     mstate._update_xy()
     return mstate
 
-def _find_any_transition(diag, proSignal, ind=-1):
+def _find_any_transition(diag, proSignal, iterindex, ind=-1):
     xmax = diag.MeasWindows[ind].mstate.xmin
     ymin = diag.MeasWindows[ind].mstate.ymax
     setting = {"ymin":ymin, "xmax":xmax} 
     mstate = MeasState(diag, **setting)
     mstate._update_step('findanytrans')
-    xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymin)
-    yRange = _extract_yRange(diag, proSignal, mstate.xmax, mstate.ymin)
+    xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymin, iterindex)
+    yRange = _extract_yRange(diag, proSignal, mstate.xmax, mstate.ymin, iterindex)
     mstate._update_xRange(xRange)
     mstate._update_yRange(yRange)
     mstate._update_xy()
@@ -469,20 +501,20 @@ def _find_any_transition(diag, proSignal, ind=-1):
             ymin = diag.MeasWindows[ind[-1]].ProcessedImage._proSignal.yStop + 1.5*diag.MeasWindows[ind[-1]].mstate.yRange
             setting = {"ymin":ymin, "xmax":xmax} 
             mstate = MeasState(diag, **setting)
-            xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymin)
-            yRange = _extract_yRange(diag, proSignal, mstate.xmax, mstate.ymin)
+            xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymin, iterindex)
+            yRange = _extract_yRange(diag, proSignal, mstate.xmax, mstate.ymin, iterindex)
         elif np.size(ind)%2 == 0:
             ymax = diag.MeasWindows[ind[-2]].ProcessedImage._proSignal.yStart - 1.5*diag.MeasWindows[ind[-2]].mstate.yRange
             setting = {"ymax":ymax, "xmax":xmax} 
             mstate = MeasState(diag, **setting)
-            xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymax)
-            yRange = _extract_yRange(diag, proSignal, mstate.xmax, mstate.ymax)
+            xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymax, iterindex)
+            yRange = _extract_yRange(diag, proSignal, mstate.xmax, mstate.ymax, iterindex)
         else:
             ymin = diag.MeasWindows[ind[-2]].ProcessedImage._proSignal.yStop + 1.5*diag.MeasWindows[ind[-2]].mstate.yRange
             setting = {"ymin":ymin, "xmax":xmax} 
             mstate = MeasState(diag, **setting)
-            xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymin)
-            yRange = _extract_yRange(diag, proSignal, mstate.xmax, mstate.ymin)
+            xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymin, iterindex)
+            yRange = _extract_yRange(diag, proSignal, mstate.xmax, mstate.ymin, iterindex)
         mstate._update_xRange(xRange)
         mstate._update_yRange(yRange)
         mstate._update_step('findanytrans')
@@ -503,14 +535,14 @@ def _find_any_transition(diag, proSignal, ind=-1):
     else:
         return mstate
 
-def _confirm_transition(diag, proSignal, ind):
+def _confirm_transition(diag, proSignal, iterindex, ind):
     xmid = (diag.tlist[ind].vStart_x + diag.tlist[ind].vStop_x)/2.
     ymid = (diag.tlist[ind].vStart_y + diag.tlist[ind].vStop_y)/2.
     setting = {"xmid":xmid, "ymid":ymid} 
     mstate = MeasState(diag, **setting)
     mstate._update_step('confirmtrans')
-    xRange = _extract_xRange(diag, proSignal, mstate.xmid, mstate.ymid)
-    yRange = _extract_yRange(diag, proSignal, mstate.xmid, mstate.ymid)
+    xRange = _extract_xRange(diag, proSignal, mstate.xmid, mstate.ymid, iterindex)
+    yRange = _extract_yRange(diag, proSignal, mstate.xmid, mstate.ymid, iterindex)
     if diag.MeasWindows[-1].mstate.yRange < .4:
         mstate._update_yRange(.4)
     else:
@@ -530,14 +562,14 @@ def _confirm_transition(diag, proSignal, ind):
     mstate = _check_ymin(diag, mstate)
     return mstate   
 
-def _goup(diag, proSignal):
+def _goup(diag, proSignal, iterindex):
     ymin = diag.MeasWindows[-1].mstate.ymax+diag.MeasWindows[-1].mstate.xRange/2.
     xmid = (ymin-diag.MeasWindows[-1].ProcessedImage.transitions[0].intercept)/diag.MeasWindows[-1].ProcessedImage.transitions[0].slope
     setting = {"xmid":xmid, "ymin":ymin} 
     mstate = MeasState(diag, **setting)
     mstate._update_step('goup')
-    xRange = _extract_xRange(diag, proSignal, mstate.xmid, mstate.ymin)
-    yRange = _extract_yRange(diag, proSignal, mstate.xmid, mstate.ymin)
+    xRange = _extract_xRange(diag, proSignal, mstate.xmid, mstate.ymin, iterindex)
+    yRange = _extract_yRange(diag, proSignal, mstate.xmid, mstate.ymin, iterindex)
     mstate._update_xRange(xRange)
     mstate._update_yRange(yRange)
     mstate._update_xy()
@@ -545,14 +577,14 @@ def _goup(diag, proSignal):
     mstate = _check_ymax(diag, mstate)
     return mstate
 
-def _goleftup(diag, proSignal):
+def _goleftup(diag, proSignal, iterindex):
     xmax = diag.MeasWindows[-1].mstate.xmid
     ymid = diag.MeasWindows[-1].mstate.ymax
     setting = {"xmax":xmax, "ymid":ymid} 
     mstate = MeasState(diag, **setting)
     mstate._update_step('goleft')
-    xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymid)
-    yRange = 2*_extract_yRange(diag, proSignal, mstate.xmax, mstate.ymid)
+    xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymid, iterindex)
+    yRange = 2*_extract_yRange(diag, proSignal, mstate.xmax, mstate.ymid, iterindex)
     mstate._update_xRange(xRange)
     mstate._update_yRange(yRange)
     mstate._update_xy()
@@ -560,14 +592,14 @@ def _goleftup(diag, proSignal):
     mstate = _check_ymax(diag, mstate)
     return mstate
 
-def _goleft(diag, proSignal):
+def _goleft(diag, proSignal, iterindex):
     xmax = diag.MeasWindows[-1].mstate.xmin
     ymid = diag.MeasWindows[-1].mstate.ymid
     setting = {"xmax":xmax, "ymid":ymid} 
     mstate = MeasState(diag, **setting)
     mstate._update_step('goleft')
-    xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymid)
-    yRange = _extract_yRange(diag, proSignal, mstate.xmax, mstate.ymid)
+    xRange = _extract_xRange(diag, proSignal, mstate.xmax, mstate.ymid, iterindex)
+    yRange = _extract_yRange(diag, proSignal, mstate.xmax, mstate.ymid, iterindex)
     mstate._update_xRange(xRange)
     mstate._update_yRange(yRange)
     mstate._update_xy()
@@ -575,14 +607,14 @@ def _goleft(diag, proSignal):
     mstate = _check_ymax(diag, mstate)
     return mstate
 
-def _goright(diag, proSignal):
+def _goright(diag, proSignal, iterindex):
     xmin = diag.MeasWindows[-1].mstate.xmax
     ymid = diag.MeasWindows[-1].mstate.ymid
     setting = {"xmin":xmin, "ymid":ymid} 
     mstate = MeasState(diag, **setting)
     mstate._update_step('goright')
-    xRange = _extract_xRange(diag, proSignal, mstate.xmin, mstate.ymid)
-    yRange = _extract_yRange(diag, proSignal, mstate.xmin, mstate.ymid)
+    xRange = _extract_xRange(diag, proSignal, mstate.xmin, mstate.ymid, iterindex)
+    yRange = _extract_yRange(diag, proSignal, mstate.xmin, mstate.ymid, iterindex)
     mstate._update_xRange(xRange)
     mstate._update_yRange(yRange)
     mstate._update_xy()
@@ -590,13 +622,13 @@ def _goright(diag, proSignal):
     mstate = _check_ymax(diag, mstate)
     return mstate
 
-def _last_measurement(diag, proSignal):
+def _last_measurement(diag, proSignal, iterindex):
     ymid = (diag.tlist[0].vStart_y+diag.tlist[0].vStop_y)/2.
     xmid = (diag.tlist[0].vStart_x+diag.tlist[0].vStop_x)/2.
     setting = {"xmid":xmid, "ymid":ymid} 
     mstate = MeasState(diag, **setting)
-    xRange = _extract_xRange(diag, proSignal, mstate.xmid, mstate.ymid)
-    yRange = _extract_yRange(diag, proSignal, mstate.xmid, mstate.ymid)
+    xRange = _extract_xRange(diag, proSignal, mstate.xmid, mstate.ymid, iterindex)
+    yRange = _extract_yRange(diag, proSignal, mstate.xmid, mstate.ymid, iterindex)
     mstate._update_xRange(xRange)
     if yRange < .4:
         mstate._update_yRange(.4)
